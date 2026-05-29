@@ -96,7 +96,10 @@ export class ChainTransitions {
         const prevOriginalEnd = sortedWins[i - 1].state.hSpan[1];
         const currOriginalStart = sortedWins[i].state.hSpan[0];
         
-        const wasTouching = Math.abs(currOriginalStart - prevOriginalEnd) === 0;
+        const prevWin = sortedWins[i - 1];
+        const currWin = sortedWins[i];
+        const hasVSpanOverlap = Math.max(prevWin.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(prevWin.state.vSpan[1], currWin.state.vSpan[1]);
+        const wasTouching = Math.abs(currOriginalStart - prevOriginalEnd) === 0 && hasVSpanOverlap;
 
         if (wasTouching) {
           const origStart = sortedWins[i].state.hSpan[0];
@@ -140,7 +143,10 @@ export class ChainTransitions {
         const nextOriginalStart = sortedWins[i + 1].state.hSpan[0];
         const currOriginalEnd = sortedWins[i].state.hSpan[1];
 
-        const wasTouching = Math.abs(nextOriginalStart - currOriginalEnd) === 0;
+        const nextWin = sortedWins[i + 1];
+        const currWin = sortedWins[i];
+        const hasVSpanOverlap = Math.max(nextWin.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(nextWin.state.vSpan[1], currWin.state.vSpan[1]);
+        const wasTouching = Math.abs(nextOriginalStart - currOriginalEnd) === 0 && hasVSpanOverlap;
 
         if (wasTouching) {
           const origStart = sortedWins[i].state.hSpan[0];
@@ -219,7 +225,10 @@ export class ChainTransitions {
         const prevOriginalEnd = sortedWins[i - 1].state.vSpan[1];
         const currOriginalStart = sortedWins[i].state.vSpan[0];
         
-        const wasTouching = Math.abs(currOriginalStart - prevOriginalEnd) === 0;
+        const prevWin = sortedWins[i - 1];
+        const currWin = sortedWins[i];
+        const hasHSpanOverlap = Math.max(prevWin.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(prevWin.state.hSpan[1], currWin.state.hSpan[1]);
+        const wasTouching = Math.abs(currOriginalStart - prevOriginalEnd) === 0 && hasHSpanOverlap;
 
         if (wasTouching) {
           const origStart = sortedWins[i].state.vSpan[0];
@@ -263,7 +272,10 @@ export class ChainTransitions {
         const nextOriginalStart = sortedWins[i + 1].state.vSpan[0];
         const currOriginalEnd = sortedWins[i].state.vSpan[1];
 
-        const wasTouching = Math.abs(nextOriginalStart - currOriginalEnd) === 0;
+        const nextWin = sortedWins[i + 1];
+        const currWin = sortedWins[i];
+        const hasHSpanOverlap = Math.max(nextWin.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(nextWin.state.hSpan[1], currWin.state.hSpan[1]);
+        const wasTouching = Math.abs(nextOriginalStart - currOriginalEnd) === 0 && hasHSpanOverlap;
 
         if (wasTouching) {
           const origStart = sortedWins[i].state.vSpan[0];

@@ -38,7 +38,8 @@ export interface CachedWindowState {
 }
 
 export interface Config {
-  horizontalFractions: number[];
-  verticalFractions: number[];
+  gridSize: number;
+  minSpan: number;
+  step: number;
   gaps: number;
 }

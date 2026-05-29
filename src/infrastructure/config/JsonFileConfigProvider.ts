@@ -5,8 +5,9 @@ import { Config } from '../../core/types';
 import { IConfigProvider } from '../../core/ports/IConfigProvider';
 
 export const DEFAULT_CONFIG: Config = {
-  horizontalFractions: [2, 3, 4, 5, 6, 7, 8],
-  verticalFractions: [2, 3, 4],
+  gridSize: 12,
+  minSpan: 2,
+  step: 2,
   gaps: 0,
 };
 
@@ -40,12 +41,15 @@ export class JsonFileConfigProvider implements IConfigProvider {
       const parsed = JSON.parse(content);
       
       return {
-        horizontalFractions: Array.isArray(parsed.horizontalFractions) && parsed.horizontalFractions.length > 0
-          ? parsed.horizontalFractions.map(Number)
-          : DEFAULT_CONFIG.horizontalFractions,
-        verticalFractions: Array.isArray(parsed.verticalFractions) && parsed.verticalFractions.length > 0
-          ? parsed.verticalFractions.map(Number)
-          : DEFAULT_CONFIG.verticalFractions,
+        gridSize: typeof parsed.gridSize === 'number' && parsed.gridSize > 0
+          ? parsed.gridSize
+          : DEFAULT_CONFIG.gridSize,
+        minSpan: typeof parsed.minSpan === 'number' && parsed.minSpan > 0
+          ? parsed.minSpan
+          : DEFAULT_CONFIG.minSpan,
+        step: typeof parsed.step === 'number' && parsed.step > 0
+          ? parsed.step
+          : DEFAULT_CONFIG.step,
         gaps: typeof parsed.gaps === 'number' && parsed.gaps >= 0
           ? parsed.gaps
           : DEFAULT_CONFIG.gaps,

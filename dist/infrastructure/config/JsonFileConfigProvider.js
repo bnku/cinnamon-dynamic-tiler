@@ -38,8 +38,9 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const os = __importStar(require("os"));
 exports.DEFAULT_CONFIG = {
-    horizontalFractions: [2, 3, 4, 5, 6, 7, 8],
-    verticalFractions: [2, 3, 4],
+    gridSize: 12,
+    minSpan: 2,
+    step: 2,
     gaps: 0,
 };
 class JsonFileConfigProvider {
@@ -64,12 +65,15 @@ class JsonFileConfigProvider {
             const content = fs.readFileSync(this.configFile, 'utf8');
             const parsed = JSON.parse(content);
             return {
-                horizontalFractions: Array.isArray(parsed.horizontalFractions) && parsed.horizontalFractions.length > 0
-                    ? parsed.horizontalFractions.map(Number)
-                    : exports.DEFAULT_CONFIG.horizontalFractions,
-                verticalFractions: Array.isArray(parsed.verticalFractions) && parsed.verticalFractions.length > 0
-                    ? parsed.verticalFractions.map(Number)
-                    : exports.DEFAULT_CONFIG.verticalFractions,
+                gridSize: typeof parsed.gridSize === 'number' && parsed.gridSize > 0
+                    ? parsed.gridSize
+                    : exports.DEFAULT_CONFIG.gridSize,
+                minSpan: typeof parsed.minSpan === 'number' && parsed.minSpan > 0
+                    ? parsed.minSpan
+                    : exports.DEFAULT_CONFIG.minSpan,
+                step: typeof parsed.step === 'number' && parsed.step > 0
+                    ? parsed.step
+                    : exports.DEFAULT_CONFIG.step,
                 gaps: typeof parsed.gaps === 'number' && parsed.gaps >= 0
                     ? parsed.gaps
                     : exports.DEFAULT_CONFIG.gaps,

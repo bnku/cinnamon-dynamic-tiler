@@ -55,7 +55,7 @@ export declare class X11ShellAdapter implements IShellAdapter {
      */
     raiseWindow(windowId: string): void;
     /**
-     * Находит монитор, на котором расположен центр переданного окна
+     * Находит монитор, на котором расположено окно, по максимальной площади пересечения с его рабочей областью
      */
     findMonitorForWindow(geom: Geometry, monitors: ScreenInfo[]): ScreenInfo;
 }

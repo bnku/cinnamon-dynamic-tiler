@@ -4,73 +4,14 @@ export class InitialLayout {
    */
   public static getInitialHSpan(
     direction: 'left' | 'right' | 'shift-left' | 'shift-right',
-    siblingSpans: { hSpan: [number, number] }[]
+    siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
+    fixedVSpan: [number, number] = [0, 12]
   ): [number, number] {
-    const occupied = new Array(12).fill(false);
-    for (const sibling of siblingSpans) {
-      const [start, end] = sibling.hSpan;
-      for (let c = start; c < end; c++) {
-        if (c >= 0 && c < 12) {
-          occupied[c] = true;
-        }
-      }
-    }
-
     if (direction === 'shift-left') return [0, 6];
     if (direction === 'shift-right') return [6, 12];
 
-    if (direction === 'left') {
-      if (!occupied[0]) {
-        let end = 0;
-        while (end < 12 && !occupied[end]) {
-          end++;
-        }
-        return [0, Math.min(end, 6)];
-      }
-
-      let start = 0;
-      while (start < 12 && occupied[start]) {
-        start++;
-      }
-      if (start < 12) {
-        let end = start;
-        while (end < 12 && !occupied[end]) {
-          end++;
-        }
-        const width = (end - start) > 6 ? 6 : (end - start);
-        return [start, start + width];
-      }
-
-      return [0, 6];
-    }
-
-    if (direction === 'right') {
-      if (!occupied[11]) {
-        let start = 12;
-        while (start > 0 && !occupied[start - 1]) {
-          start--;
-        }
-        const width = (12 - start) > 6 ? 6 : (12 - start);
-        return [12 - width, 12];
-      }
-
-      let end = 12;
-      while (end > 0 && occupied[end - 1]) {
-        end--;
-      }
-      if (end > 0) {
-        let start = end;
-        while (start > 0 && !occupied[start - 1]) {
-          start--;
-        }
-        const width = (end - start) > 6 ? 6 : (end - start);
-        return [end - width, end];
-      }
-
-      return [6, 12];
-    }
-
-    return direction === 'left' ? [0, 6] : [6, 12];
+    const spans = this.getInitialSpans(direction, siblingSpans, { fixedVSpan });
+    return spans.hSpan;
   }
 
   /**
@@ -78,69 +19,273 @@ export class InitialLayout {
    */
   public static getInitialVSpan(
     direction: 'up' | 'down',
-    siblingSpans: { vSpan: [number, number] }[]
+    siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
+    fixedHSpan: [number, number] = [0, 12]
   ): [number, number] {
-    const occupied = new Array(12).fill(false);
+    const spans = this.getInitialSpans(direction, siblingSpans, { fixedHSpan });
+    return spans.vSpan;
+  }
+
+  /**
+   * Находит наиболее подходящий двумерный макет для первого тайлинга
+   */
+  public static getInitialSpans(
+    direction: 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right',
+    siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
+    options: { fixedHSpan?: [number, number]; fixedVSpan?: [number, number] } = {}
+  ): { hSpan: [number, number]; vSpan: [number, number] } {
+    const occupied = Array.from({ length: 12 }, () => new Array(12).fill(false));
     for (const sibling of siblingSpans) {
-      const [start, end] = sibling.vSpan;
-      for (let r = start; r < end; r++) {
-        if (r >= 0 && r < 12) {
-          occupied[r] = true;
+      const [hStart, hEnd] = sibling.hSpan;
+      const [vStart, vEnd] = sibling.vSpan;
+      for (let r = vStart; r < vEnd; r++) {
+        for (let c = hStart; c < hEnd; c++) {
+          if (r >= 0 && r < 12 && c >= 0 && c < 12) {
+            occupied[r][c] = true;
+          }
         }
       }
+    }
+
+    if (direction === 'shift-left') {
+      return { hSpan: [0, 6], vSpan: options.fixedVSpan || [0, 12] };
+    }
+    if (direction === 'shift-right') {
+      return { hSpan: [6, 12], vSpan: options.fixedVSpan || [0, 12] };
+    }
+
+    if (direction === 'left') {
+      let bestHSpan: [number, number] = [0, 6];
+      let bestVSpan: [number, number] = options.fixedVSpan || [0, 12];
+
+      for (let hStart = 0; hStart <= 10; hStart++) {
+        let maxArea = 0;
+        let localBestHSpan: [number, number] | null = null;
+        let localBestVSpan: [number, number] | null = null;
+
+        const vIntervals: [number, number][] = options.fixedVSpan 
+          ? [options.fixedVSpan] 
+          : [];
+        
+        if (!options.fixedVSpan) {
+          for (let vStart = 0; vStart <= 10; vStart += 2) {
+            for (let vEnd = vStart + 2; vEnd <= 12; vEnd += 2) {
+              vIntervals.push([vStart, vEnd]);
+            }
+          }
+        }
+
+        for (const [vStart, vEnd] of vIntervals) {
+          let w = 0;
+          while (hStart + w < 12 && w < 6) {
+            let colFree = true;
+            for (let r = vStart; r < vEnd; r++) {
+              if (occupied[r][hStart + w]) {
+                colFree = false;
+                break;
+              }
+            }
+            if (colFree) {
+              w++;
+            } else {
+              break;
+            }
+          }
+
+          if (w >= 2) {
+            const area = w * (vEnd - vStart);
+            if (area > maxArea || (area === maxArea && w > (localBestHSpan ? (localBestHSpan[1] - localBestHSpan[0]) : 0))) {
+              maxArea = area;
+              localBestHSpan = [hStart, hStart + w];
+              localBestVSpan = [vStart, vEnd];
+            }
+          }
+        }
+
+        if (localBestHSpan && localBestVSpan) {
+          bestHSpan = localBestHSpan;
+          bestVSpan = localBestVSpan;
+          break;
+        }
+      }
+
+      return { hSpan: bestHSpan, vSpan: bestVSpan };
+    }
+
+    if (direction === 'right') {
+      let bestHSpan: [number, number] = [6, 12];
+      let bestVSpan: [number, number] = options.fixedVSpan || [0, 12];
+
+      for (let hEnd = 12; hEnd >= 2; hEnd--) {
+        let maxArea = 0;
+        let localBestHSpan: [number, number] | null = null;
+        let localBestVSpan: [number, number] | null = null;
+
+        const vIntervals: [number, number][] = options.fixedVSpan 
+          ? [options.fixedVSpan] 
+          : [];
+        
+        if (!options.fixedVSpan) {
+          for (let vStart = 0; vStart <= 10; vStart += 2) {
+            for (let vEnd = vStart + 2; vEnd <= 12; vEnd += 2) {
+              vIntervals.push([vStart, vEnd]);
+            }
+          }
+        }
+
+        for (const [vStart, vEnd] of vIntervals) {
+          let w = 0;
+          while (hEnd - 1 - w >= 0 && w < 6) {
+            let colFree = true;
+            for (let r = vStart; r < vEnd; r++) {
+              if (occupied[r][hEnd - 1 - w]) {
+                colFree = false;
+                break;
+              }
+            }
+            if (colFree) {
+              w++;
+            } else {
+              break;
+            }
+          }
+
+          if (w >= 2) {
+            const area = w * (vEnd - vStart);
+            if (area > maxArea || (area === maxArea && w > (localBestHSpan ? (localBestHSpan[1] - localBestHSpan[0]) : 0))) {
+              maxArea = area;
+              localBestHSpan = [hEnd - w, hEnd];
+              localBestVSpan = [vStart, vEnd];
+            }
+          }
+        }
+
+        if (localBestHSpan && localBestVSpan) {
+          bestHSpan = localBestHSpan;
+          bestVSpan = localBestVSpan;
+          break;
+        }
+      }
+
+      return { hSpan: bestHSpan, vSpan: bestVSpan };
     }
 
     if (direction === 'up') {
-      if (!occupied[0]) {
-        let end = 0;
-        while (end < 12 && !occupied[end]) {
-          end++;
+      let bestHSpan: [number, number] = options.fixedHSpan || [0, 12];
+      let bestVSpan: [number, number] = [0, 6];
+
+      for (let vStart = 0; vStart <= 10; vStart++) {
+        let maxArea = 0;
+        let localBestHSpan: [number, number] | null = null;
+        let localBestVSpan: [number, number] | null = null;
+
+        const hIntervals: [number, number][] = options.fixedHSpan 
+          ? [options.fixedHSpan] 
+          : [];
+        
+        if (!options.fixedHSpan) {
+          for (let hStart = 0; hStart <= 10; hStart += 2) {
+            for (let hEnd = hStart + 2; hEnd <= 12; hEnd += 2) {
+              hIntervals.push([hStart, hEnd]);
+            }
+          }
         }
-        return [0, Math.min(end, 6)];
+
+        for (const [hStart, hEnd] of hIntervals) {
+          let h = 0;
+          while (vStart + h < 12 && h < 6) {
+            let rowFree = true;
+            for (let c = hStart; c < hEnd; c++) {
+              if (occupied[vStart + h][c]) {
+                rowFree = false;
+                break;
+              }
+            }
+            if (rowFree) {
+              h++;
+            } else {
+              break;
+            }
+          }
+
+          if (h >= 2) {
+            const area = h * (hEnd - hStart);
+            if (area > maxArea || (area === maxArea && h > (localBestVSpan ? (localBestVSpan[1] - localBestVSpan[0]) : 0))) {
+              maxArea = area;
+              localBestHSpan = [hStart, hEnd];
+              localBestVSpan = [vStart, vStart + h];
+            }
+          }
+        }
+
+        if (localBestHSpan && localBestVSpan) {
+          bestHSpan = localBestHSpan;
+          bestVSpan = localBestVSpan;
+          break;
+        }
       }
 
-      let start = 0;
-      while (start < 12 && occupied[start]) {
-        start++;
-      }
-      if (start < 12) {
-        let end = start;
-        while (end < 12 && !occupied[end]) {
-          end++;
-        }
-        const height = (end - start) > 6 ? 6 : (end - start);
-        return [start, start + height];
-      }
-
-      return [0, 6];
+      return { hSpan: bestHSpan, vSpan: bestVSpan };
     }
 
     if (direction === 'down') {
-      if (!occupied[11]) {
-        let start = 12;
-        while (start > 0 && !occupied[start - 1]) {
-          start--;
+      let bestHSpan: [number, number] = options.fixedHSpan || [0, 12];
+      let bestVSpan: [number, number] = [6, 12];
+
+      for (let vEnd = 12; vEnd >= 2; vEnd--) {
+        let maxArea = 0;
+        let localBestHSpan: [number, number] | null = null;
+        let localBestVSpan: [number, number] | null = null;
+
+        const hIntervals: [number, number][] = options.fixedHSpan 
+          ? [options.fixedHSpan] 
+          : [];
+        
+        if (!options.fixedHSpan) {
+          for (let hStart = 0; hStart <= 10; hStart += 2) {
+            for (let hEnd = hStart + 2; hEnd <= 12; hEnd += 2) {
+              hIntervals.push([hStart, hEnd]);
+            }
+          }
         }
-        const height = (12 - start) > 6 ? 6 : (12 - start);
-        return [12 - height, 12];
+
+        for (const [hStart, hEnd] of hIntervals) {
+          let h = 0;
+          while (vEnd - 1 - h >= 0 && h < 6) {
+            let rowFree = true;
+            for (let c = hStart; c < hEnd; c++) {
+              if (occupied[vEnd - 1 - h][c]) {
+                rowFree = false;
+                break;
+              }
+            }
+            if (rowFree) {
+              h++;
+            } else {
+              break;
+            }
+          }
+
+          if (h >= 2) {
+            const area = h * (hEnd - hStart);
+            if (area > maxArea || (area === maxArea && h > (localBestVSpan ? (localBestVSpan[1] - localBestVSpan[0]) : 0))) {
+              maxArea = area;
+              localBestHSpan = [hStart, hEnd];
+              localBestVSpan = [vEnd - h, vEnd];
+            }
+          }
+        }
+
+        if (localBestHSpan && localBestVSpan) {
+          bestHSpan = localBestHSpan;
+          bestVSpan = localBestVSpan;
+          break;
+        }
       }
 
-      let end = 12;
-      while (end > 0 && occupied[end - 1]) {
-        end--;
-      }
-      if (end > 0) {
-        let start = end;
-        while (start > 0 && !occupied[start - 1]) {
-          start--;
-        }
-        const height = (end - start) > 6 ? 6 : (end - start);
-        return [end - height, end];
-      }
-
-      return [6, 12];
+      return { hSpan: bestHSpan, vSpan: bestVSpan };
     }
 
-    return direction === 'up' ? [0, 6] : [6, 12];
+    return { hSpan: [0, 12], vSpan: [0, 12] };
   }
 }

@@ -227,19 +227,39 @@ class X11ShellAdapter {
         }
     }
     /**
-     * Находит монитор, на котором расположен центр переданного окна
+     * Находит монитор, на котором расположено окно, по максимальной площади пересечения с его рабочей областью
      */
     findMonitorForWindow(geom, monitors) {
-        const centerX = geom.x + Math.round(geom.width / 2);
-        const centerY = geom.y + Math.round(geom.height / 2);
+        let bestMonitor = monitors[0];
+        let maxArea = 0;
         for (const monitor of monitors) {
-            const isInsideX = centerX >= monitor.x && centerX <= monitor.x + monitor.width;
-            const isInsideY = centerY >= monitor.y && centerY <= monitor.y + monitor.height;
-            if (isInsideX && isInsideY) {
-                return monitor;
+            const wX1 = Math.max(geom.x, monitor.workarea.x);
+            const wY1 = Math.max(geom.y, monitor.workarea.y);
+            const wX2 = Math.min(geom.x + geom.width, monitor.workarea.x + monitor.workarea.width);
+            const wY2 = Math.min(geom.y + geom.height, monitor.workarea.y + monitor.workarea.height);
+            const intersectW = Math.max(0, wX2 - wX1);
+            const intersectH = Math.max(0, wY2 - wY1);
+            const area = intersectW * intersectH;
+            if (area > maxArea) {
+                maxArea = area;
+                bestMonitor = monitor;
             }
         }
-        return monitors[0];
+        if (maxArea === 0 && monitors.length > 0) {
+            const centerX = geom.x + geom.width / 2;
+            const centerY = geom.y + geom.height / 2;
+            let minDistance = Infinity;
+            for (const monitor of monitors) {
+                const mCenterX = monitor.x + monitor.width / 2;
+                const mCenterY = monitor.y + monitor.height / 2;
+                const dist = Math.sqrt((centerX - mCenterX) ** 2 + (centerY - mCenterY) ** 2);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    bestMonitor = monitor;
+                }
+            }
+        }
+        return bestMonitor;
     }
 }
 exports.X11ShellAdapter = X11ShellAdapter;

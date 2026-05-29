@@ -26,9 +26,10 @@ export class TilingEngine {
    */
   public static getInitialHSpan(
     direction: 'left' | 'right' | 'shift-left' | 'shift-right',
-    siblingSpans: { hSpan: [number, number] }[]
+    siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
+    fixedVSpan?: [number, number]
   ): [number, number] {
-    return InitialLayout.getInitialHSpan(direction, siblingSpans);
+    return InitialLayout.getInitialHSpan(direction, siblingSpans, fixedVSpan);
   }
 
   /**
@@ -36,9 +37,10 @@ export class TilingEngine {
    */
   public static getInitialVSpan(
     direction: 'up' | 'down',
-    siblingSpans: { vSpan: [number, number] }[]
+    siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
+    fixedHSpan?: [number, number]
   ): [number, number] {
-    return InitialLayout.getInitialVSpan(direction, siblingSpans);
+    return InitialLayout.getInitialVSpan(direction, siblingSpans, fixedHSpan);
   }
 
   /**
@@ -63,37 +65,45 @@ export class TilingEngine {
     if (currentState.lastDirection === null) {
       // Первый тайлинг окна
       switch (direction) {
-        case 'left':
-          nextState.hSpan = this.getInitialHSpan('left', siblingSpans);
-          nextState.vSpan = [0, 12];
+        case 'left': {
+          const spans = InitialLayout.getInitialSpans('left', siblingSpans);
+          nextState.hSpan = spans.hSpan;
+          nextState.vSpan = spans.vSpan;
           nextState.hIndex = this.spanToHIndex(nextState.hSpan);
-          nextState.vIndex = 5;
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
           nextState.lastDirection = nextState.hSpan[0] > 0 ? 'right' : 'left';
           break;
+        }
 
-        case 'right':
-          nextState.hSpan = this.getInitialHSpan('right', siblingSpans);
-          nextState.vSpan = [0, 12];
+        case 'right': {
+          const spans = InitialLayout.getInitialSpans('right', siblingSpans);
+          nextState.hSpan = spans.hSpan;
+          nextState.vSpan = spans.vSpan;
           nextState.hIndex = this.spanToHIndex(nextState.hSpan);
-          nextState.vIndex = 5;
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
           nextState.lastDirection = nextState.hSpan[1] < 12 ? 'left' : 'right';
           break;
+        }
 
-        case 'up':
-          nextState.hSpan = [0, 12];
-          nextState.vSpan = this.getInitialVSpan('up', siblingSpans);
-          nextState.hIndex = 5;
+        case 'up': {
+          const spans = InitialLayout.getInitialSpans('up', siblingSpans);
+          nextState.hSpan = spans.hSpan;
+          nextState.vSpan = spans.vSpan;
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
           nextState.vIndex = this.spanToVIndex(nextState.vSpan);
           nextState.lastDirection = nextState.vSpan[0] > 0 ? 'down' : 'up';
           break;
+        }
 
-        case 'down':
-          nextState.hSpan = [0, 12];
-          nextState.vSpan = this.getInitialVSpan('down', siblingSpans);
-          nextState.hIndex = 5;
+        case 'down': {
+          const spans = InitialLayout.getInitialSpans('down', siblingSpans);
+          nextState.hSpan = spans.hSpan;
+          nextState.vSpan = spans.vSpan;
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
           nextState.vIndex = this.spanToVIndex(nextState.vSpan);
           nextState.lastDirection = nextState.vSpan[1] < 12 ? 'up' : 'down';
           break;
+        }
 
         case 'shift-left':
           nextState.hSpan = [0, 6];
@@ -112,6 +122,31 @@ export class TilingEngine {
           break;
       }
     } else {
+      // Проверка на смену оси (Corner Mode)
+      const isHorizontalOld = currentState.lastDirection === 'left' || currentState.lastDirection === 'right' || currentState.lastDirection === 'shift-left' || currentState.lastDirection === 'shift-right';
+      const isVerticalOld = currentState.lastDirection === 'up' || currentState.lastDirection === 'down';
+      
+      const isHorizontalNew = direction === 'left' || direction === 'right' || direction === 'shift-left' || direction === 'shift-right';
+      const isVerticalNew = direction === 'up' || direction === 'down';
+
+      if (isHorizontalOld && isVerticalNew) {
+        nextState.hSpan = currentState.hSpan;
+        nextState.hIndex = currentState.hIndex;
+        nextState.vSpan = this.getInitialVSpan(direction as 'up' | 'down', siblingSpans, currentState.hSpan);
+        nextState.vIndex = this.spanToVIndex(nextState.vSpan);
+        nextState.lastDirection = direction;
+        return nextState;
+      }
+
+      if (isVerticalOld && isHorizontalNew) {
+        nextState.vSpan = currentState.vSpan;
+        nextState.vIndex = currentState.vIndex;
+        nextState.hSpan = this.getInitialHSpan(direction as 'left' | 'right' | 'shift-left' | 'shift-right', siblingSpans, currentState.vSpan);
+        nextState.hIndex = this.spanToHIndex(nextState.hSpan);
+        nextState.lastDirection = direction;
+        return nextState;
+      }
+
       // Окно уже в режиме тайлинга
       switch (direction) {
         case 'left': {

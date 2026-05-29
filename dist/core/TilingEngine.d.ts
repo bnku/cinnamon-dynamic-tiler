@@ -11,13 +11,15 @@ export declare class TilingEngine {
      */
     static getInitialHSpan(direction: 'left' | 'right' | 'shift-left' | 'shift-right', siblingSpans: {
         hSpan: [number, number];
-    }[]): [number, number];
+        vSpan: [number, number];
+    }[], fixedVSpan?: [number, number]): [number, number];
     /**
      * Находит наиболее подходящий вертикальный спан для первого тайлинга в зависимости от направления и соседей
      */
     static getInitialVSpan(direction: 'up' | 'down', siblingSpans: {
+        hSpan: [number, number];
         vSpan: [number, number];
-    }[]): [number, number];
+    }[], fixedHSpan?: [number, number]): [number, number];
     /**
      * Рассчитывает следующее состояние окна на основе текущего состояния, направления и конфигурации
      */

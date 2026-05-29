@@ -17,8 +17,9 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
   };
 
   const fakeConfig: Config = {
-    horizontalFractions: [2, 3, 4],
-    verticalFractions: [2, 3, 4],
+    gridSize: 12,
+    minSpan: 2,
+    step: 2,
     gaps: 0,
   };
 
@@ -333,4 +334,140 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(chain['winC'].hSpan).toEqual([8, 12]);
     expect(chain['winA'].hSpan).toEqual([0, 2]);
   });
+
+  test('should handle Corner Mode transitions (Left -> Down and Up -> Right)', () => {
+    const state1: WindowState = {
+      hIndex: 2,
+      vIndex: 5,
+      hSpan: [0, 6],
+      vSpan: [0, 12],
+      lastDirection: 'left'
+    };
+
+    const nextState1 = TilingEngine.calculateNextState(state1, 'down', fakeConfig);
+    expect(nextState1.hSpan).toEqual([0, 6]);
+    expect(nextState1.vSpan).toEqual([6, 12]);
+    expect(nextState1.lastDirection).toBe('down');
+
+    const state2: WindowState = {
+      hIndex: 5,
+      vIndex: 2,
+      hSpan: [0, 12],
+      vSpan: [0, 6],
+      lastDirection: 'up'
+    };
+
+    const nextState2 = TilingEngine.calculateNextState(state2, 'right', fakeConfig);
+    expect(nextState2.vSpan).toEqual([0, 6]);
+    expect(nextState2.hSpan).toEqual([6, 12]);
+    expect(nextState2.lastDirection).toBe('right');
+  });
+
+  test('should not affect horizontal neighbors that do not have vertical overlap', () => {
+    // Окно A: [0, 2] по горизонтали, [0, 6] по вертикали (верхняя левая часть)
+    // Окно B: [2, 12] по горизонтали, [6, 12] по вертикали (нижняя правая часть)
+    // Они соприкасаются по горизонтали на x = 2, но НЕ перекрываются по вертикали (A: 0-6, B: 6-12)
+    // Если окно A расширяется вправо, оно НЕ должно сдвигать или сжимать окно B, потому что они на разной высоте.
+    const winA = {
+      windowId: 'winA',
+      state: { hIndex: 0, vIndex: 0, hSpan: [0, 2] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: 'left' as const }
+    };
+    const winB = {
+      windowId: 'winB',
+      state: { hIndex: 6, vIndex: 6, hSpan: [2, 12] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: 'right' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'winA',
+      'right',
+      fakeConfig,
+      [winA, winB]
+    );
+
+    // winA расширится до [0, 4]
+    // winB не должно измениться (hSpan останется [2, 12])
+    expect(chain['winA'].hSpan).toEqual([0, 4]);
+    expect(chain['winB'].hSpan).toEqual([2, 12]);
+  });
+
+  test('should clamp gaps to keep minimum window dimension at 100px', () => {
+    const monitor: ScreenInfo = {
+      id: 'HDMI-0',
+      width: 1200,
+      height: 1200,
+      x: 0,
+      y: 0,
+      workarea: {
+        x: 0,
+        y: 0,
+        width: 1200,
+        height: 1200,
+      },
+    };
+
+    // Окно занимает 1 колонку из 12 (100px) и 1 строку из 12 (100px)
+    const state: WindowState = {
+      hIndex: 0,
+      vIndex: 0,
+      hSpan: [0, 1], // ширина 100px
+      vSpan: [0, 1], // высота 100px
+      lastDirection: 'left'
+    };
+
+    // С gaps = 20, без ограничения ширина/высота стали бы 100 - 40 = 60px.
+    // С ограничением они должны остаться ровно 100px (gapW/gapH станет 0).
+    const geom = TilingEngine.stateToGeometry(state, monitor, { ...fakeConfig, gaps: 20 });
+    expect(geom.width).toBe(100);
+    expect(geom.height).toBe(100);
+    expect(geom.x).toBe(0);
+    expect(geom.y).toBe(0);
+
+    // Окно занимает 2 колонки из 12 (200px)
+    const state2: WindowState = {
+      hIndex: 0,
+      vIndex: 0,
+      hSpan: [0, 2], // ширина 200px
+      vSpan: [0, 2], // высота 200px
+      lastDirection: 'left'
+    };
+
+    // С gaps = 30, без ограничения ширина стала бы 200 - 60 = 140px.
+    // maxGap = (200 - 100) / 2 = 50px.
+    // gapW = Math.min(30, 50) = 30px.
+    // width = 200 - 60 = 140px. x = 30px.
+    const geom2 = TilingEngine.stateToGeometry(state2, monitor, { ...fakeConfig, gaps: 30 });
+    expect(geom2.width).toBe(140);
+    expect(geom2.height).toBe(140);
+    expect(geom2.x).toBe(30);
+    expect(geom2.y).toBe(30);
+
+    // С gaps = 60, без ограничения ширина стала бы 200 - 120 = 80px.
+    // maxGap = (200 - 100) / 2 = 50px.
+    // gapW = Math.min(60, 50) = 50px.
+    // width = 200 - 100 = 100px. x = 50px.
+    const geom3 = TilingEngine.stateToGeometry(state2, monitor, { ...fakeConfig, gaps: 60 });
+    expect(geom3.width).toBe(100);
+    expect(geom3.height).toBe(100);
+    expect(geom3.x).toBe(50);
+    expect(geom3.y).toBe(50);
+  });
+
+  test('should smart snap to a free 2D quadrant instead of shrinking or overlapping', () => {
+    // Окно A: [0, 6] по горизонтали, [0, 6] по вертикали (верхняя левая четверть)
+    const winA = { hSpan: [0, 6] as [number, number], vSpan: [0, 6] as [number, number] };
+
+    // Новое окно тайлится влево (left). Левый верх свободный? Нет, занят окном A.
+    // Но левый низ [0, 6] по горизонтали и [6, 12] по вертикали абсолютно свободен!
+    // Оно должно занять именно эту свободную четверть [0, 6] x [6, 12]!
+    const nextState = TilingEngine.calculateNextState(
+      TilingEngine.getDefaultState(),
+      'left',
+      fakeConfig,
+      [winA]
+    );
+
+    expect(nextState.hSpan).toEqual([0, 6]);
+    expect(nextState.vSpan).toEqual([6, 12]);
+  });
 });
+

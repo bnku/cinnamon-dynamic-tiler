@@ -66,10 +66,15 @@ class GeometryConverter {
         let height = yEnd - yStart;
         let y = yStart;
         if (gaps > 0) {
-            x += gaps;
-            y += gaps;
-            width -= 2 * gaps;
-            height -= 2 * gaps;
+            const minDimension = 100;
+            const maxGapW = Math.max(0, (width - minDimension) / 2);
+            const maxGapH = Math.max(0, (height - minDimension) / 2);
+            const gapW = Math.min(gaps, maxGapW);
+            const gapH = Math.min(gaps, maxGapH);
+            x += gapW;
+            y += gapH;
+            width -= 2 * gapW;
+            height -= 2 * gapH;
         }
         return { x, y, width, height };
     }

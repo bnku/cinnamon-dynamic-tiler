@@ -70,15 +70,52 @@ export class TilingUseCase {
       const cachedWin = allCached[id];
       if (!cachedWin) continue;
 
+      let windowState = { ...cachedWin.state };
+      if (id !== windowId) {
+        try {
+          const currentGeom = this.shell.getWindowGeometry(id);
+          const ext = this.shell.getFrameExtents(id);
+          const currentVisible = {
+            x: currentGeom.x + ext.left,
+            y: currentGeom.y + ext.top,
+            width: currentGeom.width - ext.left - ext.right,
+            height: currentGeom.height - ext.top - ext.bottom,
+          };
+
+          const diffX = Math.abs(currentVisible.x - cachedWin.tiledGeometry.x);
+          const diffY = Math.abs(currentVisible.y - cachedWin.tiledGeometry.y);
+          const diffW = Math.abs(currentVisible.width - cachedWin.tiledGeometry.width);
+          const diffH = Math.abs(currentVisible.height - cachedWin.tiledGeometry.height);
+
+          const THRESHOLD = 80;
+          if (diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD) {
+            const hSpan = TilingEngine.geometryToHSpan(currentVisible, activeMonitor);
+            const vSpan = TilingEngine.geometryToVSpan(currentVisible, activeMonitor);
+            
+            windowState = {
+              ...cachedWin.state,
+              hSpan,
+              vSpan,
+              hIndex: TilingEngine.spanToHIndex(hSpan),
+              vIndex: TilingEngine.spanToVIndex(vSpan)
+            };
+            
+            this.cache.saveState(id, windowState, currentVisible, cachedWin.originalGeometry || currentGeom);
+          }
+        } catch {
+          // Игнорируем ошибки при получении геометрии соседа
+        }
+      }
+
       const monitor = this.shell.findMonitorForWindow(cachedWin.tiledGeometry, monitors);
       if (monitor.id !== activeMonitor.id) continue;
 
-      const isOldStateSchema = typeof (cachedWin.state as any).hIndex !== 'number' || typeof (cachedWin.state as any).vIndex !== 'number';
+      const isOldStateSchema = typeof (windowState as any).hIndex !== 'number' || typeof (windowState as any).vIndex !== 'number';
       if (isOldStateSchema) continue;
 
       activeWindowsOnMonitor.push({
         windowId: id,
-        state: cachedWin.state
+        state: windowState
       });
     }
 
