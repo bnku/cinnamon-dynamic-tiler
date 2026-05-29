@@ -245,18 +245,7 @@ class TilingEngine {
                             newEnd = Math.max(3, end - 3);
                         }
                         const targetSpan = [newStart, newEnd];
-                        // Проверка на столкновение
-                        let leftCollision = false;
-                        for (const sibling of siblingSpans) {
-                            const isLeftNeighbor = sibling.hSpan[1] === currentState.hSpan[0];
-                            if (isLeftNeighbor) {
-                                const neighborWidth = sibling.hSpan[1] - sibling.hSpan[0];
-                                if (targetSpan[0] < currentState.hSpan[0] && neighborWidth <= 3) {
-                                    leftCollision = true;
-                                    break;
-                                }
-                            }
-                        }
+                        const leftCollision = targetSpan[0] < currentState.hSpan[0] && this.isLeftChainBlocked(currentState.hSpan[0], siblingSpans);
                         if (leftCollision) {
                             const currentStart = currentState.hSpan[0];
                             const currentEnd = currentState.hSpan[1];
@@ -275,17 +264,7 @@ class TilingEngine {
                     else {
                         const nextHIndex = Math.max(0, currentState.hIndex - 1);
                         const nextHSpan = exports.HORIZONTAL_SPANS[nextHIndex];
-                        let leftCollision = false;
-                        for (const sibling of siblingSpans) {
-                            const isLeftNeighbor = sibling.hSpan[1] === currentState.hSpan[0];
-                            if (isLeftNeighbor) {
-                                const neighborWidth = sibling.hSpan[1] - sibling.hSpan[0];
-                                if (nextHSpan[0] < currentState.hSpan[0] && neighborWidth <= 3) {
-                                    leftCollision = true;
-                                    break;
-                                }
-                            }
-                        }
+                        const leftCollision = nextHSpan[0] < currentState.hSpan[0] && this.isLeftChainBlocked(currentState.hSpan[0], siblingSpans);
                         if (leftCollision) {
                             const currentStart = currentState.hSpan[0];
                             const currentEnd = currentState.hSpan[1];
@@ -316,17 +295,7 @@ class TilingEngine {
                             newStart = Math.min(9, start + 3);
                         }
                         const targetSpan = [newStart, newEnd];
-                        let rightCollision = false;
-                        for (const sibling of siblingSpans) {
-                            const isRightNeighbor = sibling.hSpan[0] === currentState.hSpan[1];
-                            if (isRightNeighbor) {
-                                const neighborWidth = sibling.hSpan[1] - sibling.hSpan[0];
-                                if (targetSpan[1] > currentState.hSpan[1] && neighborWidth <= 3) {
-                                    rightCollision = true;
-                                    break;
-                                }
-                            }
-                        }
+                        const rightCollision = targetSpan[1] > currentState.hSpan[1] && this.isRightChainBlocked(currentState.hSpan[1], siblingSpans);
                         if (rightCollision) {
                             const currentStart = currentState.hSpan[0];
                             const currentEnd = currentState.hSpan[1];
@@ -345,17 +314,7 @@ class TilingEngine {
                     else {
                         const nextHIndexRight = Math.min(10, currentState.hIndex + 1);
                         const nextHSpanRight = exports.HORIZONTAL_SPANS[nextHIndexRight];
-                        let rightCollision = false;
-                        for (const sibling of siblingSpans) {
-                            const isRightNeighbor = sibling.hSpan[0] === currentState.hSpan[1];
-                            if (isRightNeighbor) {
-                                const neighborWidth = sibling.hSpan[1] - sibling.hSpan[0];
-                                if (nextHSpanRight[1] > currentState.hSpan[1] && neighborWidth <= 3) {
-                                    rightCollision = true;
-                                    break;
-                                }
-                            }
-                        }
+                        const rightCollision = nextHSpanRight[1] > currentState.hSpan[1] && this.isRightChainBlocked(currentState.hSpan[1], siblingSpans);
                         if (rightCollision) {
                             const currentStart = currentState.hSpan[0];
                             const currentEnd = currentState.hSpan[1];
@@ -386,17 +345,7 @@ class TilingEngine {
                             newEnd = Math.max(3, end - 3);
                         }
                         const targetSpan = [newStart, newEnd];
-                        let topCollision = false;
-                        for (const sibling of siblingSpans) {
-                            const isTopNeighbor = sibling.vSpan[1] === currentState.vSpan[0];
-                            if (isTopNeighbor) {
-                                const neighborHeight = sibling.vSpan[1] - sibling.vSpan[0];
-                                if (targetSpan[0] < currentState.vSpan[0] && neighborHeight <= 3) {
-                                    topCollision = true;
-                                    break;
-                                }
-                            }
-                        }
+                        const topCollision = targetSpan[0] < currentState.vSpan[0] && this.isTopChainBlocked(currentState.vSpan[0], siblingSpans);
                         if (topCollision) {
                             const currentStart = currentState.vSpan[0];
                             const currentEnd = currentState.vSpan[1];
@@ -415,17 +364,7 @@ class TilingEngine {
                     else {
                         const nextVIndexUp = Math.max(0, currentState.vIndex - 1);
                         const nextVSpanUp = exports.VERTICAL_SPANS[nextVIndexUp];
-                        let topCollision = false;
-                        for (const sibling of siblingSpans) {
-                            const isTopNeighbor = sibling.vSpan[1] === currentState.vSpan[0];
-                            if (isTopNeighbor) {
-                                const neighborHeight = sibling.vSpan[1] - sibling.vSpan[0];
-                                if (nextVSpanUp[0] < currentState.vSpan[0] && neighborHeight <= 3) {
-                                    topCollision = true;
-                                    break;
-                                }
-                            }
-                        }
+                        const topCollision = nextVSpanUp[0] < currentState.vSpan[0] && this.isTopChainBlocked(currentState.vSpan[0], siblingSpans);
                         if (topCollision) {
                             const currentStart = currentState.vSpan[0];
                             const currentEnd = currentState.vSpan[1];
@@ -456,17 +395,7 @@ class TilingEngine {
                             newStart = Math.min(9, start + 3);
                         }
                         const targetSpan = [newStart, newEnd];
-                        let bottomCollision = false;
-                        for (const sibling of siblingSpans) {
-                            const isBottomNeighbor = sibling.vSpan[0] === currentState.vSpan[1];
-                            if (isBottomNeighbor) {
-                                const neighborHeight = sibling.vSpan[1] - sibling.vSpan[0];
-                                if (targetSpan[1] > currentState.vSpan[1] && neighborHeight <= 3) {
-                                    bottomCollision = true;
-                                    break;
-                                }
-                            }
-                        }
+                        const bottomCollision = targetSpan[1] > currentState.vSpan[1] && this.isBottomChainBlocked(currentState.vSpan[1], siblingSpans);
                         if (bottomCollision) {
                             const currentStart = currentState.vSpan[0];
                             const currentEnd = currentState.vSpan[1];
@@ -485,17 +414,7 @@ class TilingEngine {
                     else {
                         const nextVIndexDown = Math.min(6, currentState.vIndex + 1);
                         const nextVSpanDown = exports.VERTICAL_SPANS[nextVIndexDown];
-                        let bottomCollision = false;
-                        for (const sibling of siblingSpans) {
-                            const isBottomNeighbor = sibling.vSpan[0] === currentState.vSpan[1];
-                            if (isBottomNeighbor) {
-                                const neighborHeight = sibling.vSpan[1] - sibling.vSpan[0];
-                                if (nextVSpanDown[1] > currentState.vSpan[1] && neighborHeight <= 3) {
-                                    bottomCollision = true;
-                                    break;
-                                }
-                            }
-                        }
+                        const bottomCollision = nextVSpanDown[1] > currentState.vSpan[1] && this.isBottomChainBlocked(currentState.vSpan[1], siblingSpans);
                         if (bottomCollision) {
                             const currentStart = currentState.vSpan[0];
                             const currentEnd = currentState.vSpan[1];
@@ -805,6 +724,102 @@ class TilingEngine {
             height -= 2 * gaps;
         }
         return { x, y, width, height };
+    }
+    /**
+     * Проверяет, заблокирована ли цепочка соприкасающихся окон слева от текущей границы
+     */
+    static isLeftChainBlocked(startCol, siblingSpans) {
+        let currentStart = startCol;
+        let chainLength = 0;
+        let currentChainWidth = 0;
+        while (true) {
+            const neighbor = siblingSpans.find(s => s.hSpan[1] === currentStart);
+            if (!neighbor)
+                break;
+            chainLength++;
+            const width = neighbor.hSpan[1] - neighbor.hSpan[0];
+            currentChainWidth += width;
+            currentStart = neighbor.hSpan[0];
+        }
+        if (chainLength === 0)
+            return false;
+        const freeSpace = currentStart;
+        const minChainWidth = chainLength * 3;
+        const compressionReserve = currentChainWidth - minChainWidth;
+        const movementReserve = freeSpace + compressionReserve;
+        return movementReserve <= 0;
+    }
+    /**
+     * Проверяет, заблокирована ли цепочка соприкасающихся окон справа от текущей границы
+     */
+    static isRightChainBlocked(endCol, siblingSpans) {
+        let currentEnd = endCol;
+        let chainLength = 0;
+        let currentChainWidth = 0;
+        while (true) {
+            const neighbor = siblingSpans.find(s => s.hSpan[0] === currentEnd);
+            if (!neighbor)
+                break;
+            chainLength++;
+            const width = neighbor.hSpan[1] - neighbor.hSpan[0];
+            currentChainWidth += width;
+            currentEnd = neighbor.hSpan[1];
+        }
+        if (chainLength === 0)
+            return false;
+        const freeSpace = 12 - currentEnd;
+        const minChainWidth = chainLength * 3;
+        const compressionReserve = currentChainWidth - minChainWidth;
+        const movementReserve = freeSpace + compressionReserve;
+        return movementReserve <= 0;
+    }
+    /**
+     * Проверяет, заблокирована ли цепочка соприкасающихся окон сверху от текущей границы
+     */
+    static isTopChainBlocked(startRow, siblingSpans) {
+        let currentStart = startRow;
+        let chainLength = 0;
+        let currentChainHeight = 0;
+        while (true) {
+            const neighbor = siblingSpans.find(s => s.vSpan[1] === currentStart);
+            if (!neighbor)
+                break;
+            chainLength++;
+            const height = neighbor.vSpan[1] - neighbor.vSpan[0];
+            currentChainHeight += height;
+            currentStart = neighbor.vSpan[0];
+        }
+        if (chainLength === 0)
+            return false;
+        const freeSpace = currentStart;
+        const minChainHeight = chainLength * 3;
+        const compressionReserve = currentChainHeight - minChainHeight;
+        const movementReserve = freeSpace + compressionReserve;
+        return movementReserve <= 0;
+    }
+    /**
+     * Проверяет, заблокирована ли цепочка соприкасающихся окон снизу от текущей границы
+     */
+    static isBottomChainBlocked(endRow, siblingSpans) {
+        let currentEnd = endRow;
+        let chainLength = 0;
+        let currentChainHeight = 0;
+        while (true) {
+            const neighbor = siblingSpans.find(s => s.vSpan[0] === currentEnd);
+            if (!neighbor)
+                break;
+            chainLength++;
+            const height = neighbor.vSpan[1] - neighbor.vSpan[0];
+            currentChainHeight += height;
+            currentEnd = neighbor.vSpan[1];
+        }
+        if (chainLength === 0)
+            return false;
+        const freeSpace = 12 - currentEnd;
+        const minChainHeight = chainLength * 3;
+        const compressionReserve = currentChainHeight - minChainHeight;
+        const movementReserve = freeSpace + compressionReserve;
+        return movementReserve <= 0;
     }
 }
 exports.TilingEngine = TilingEngine;

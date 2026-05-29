@@ -55,4 +55,20 @@ export declare class TilingEngine {
      * Преобразует абстрактные доли WindowState в реальные координаты Geometry с учетом отступов (gaps)
      */
     static stateToGeometry(state: WindowState, screen: ScreenInfo, config: Config): Geometry;
+    /**
+     * Проверяет, заблокирована ли цепочка соприкасающихся окон слева от текущей границы
+     */
+    private static isLeftChainBlocked;
+    /**
+     * Проверяет, заблокирована ли цепочка соприкасающихся окон справа от текущей границы
+     */
+    private static isRightChainBlocked;
+    /**
+     * Проверяет, заблокирована ли цепочка соприкасающихся окон сверху от текущей границы
+     */
+    private static isTopChainBlocked;
+    /**
+     * Проверяет, заблокирована ли цепочка соприкасающихся окон снизу от текущей границы
+     */
+    private static isBottomChainBlocked;
 }

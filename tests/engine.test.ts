@@ -211,9 +211,38 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     const hSpan2 = TilingEngine.geometryToHSpan(geom2, monitor);
     expect(hSpan2).toEqual([6, 9]);
 
-    // 3. Окно [0, 3] (2280, ширина 960)
+    // 3. Окно [0, 3] (2280, width 960)
     const geom3 = { x: 2280, y: 0, width: 960, height: 1080 };
     const hSpan3 = TilingEngine.geometryToHSpan(geom3, monitor);
     expect(hSpan3).toEqual([0, 3]);
+  });
+
+  test('should allow active window at [0, 3] to expand right by shifting neighbors [3, 6] and [6, 9] into free space [9, 12]', () => {
+    // 3 затайленных окна на мониторе
+    const winA = {
+      windowId: 'winA',
+      state: { hIndex: 0, vIndex: 3, hSpan: [0, 3] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'left' as const }
+    };
+    const winB = {
+      windowId: 'winB',
+      state: { hIndex: 0, vIndex: 3, hSpan: [3, 6] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const winC = {
+      windowId: 'winC',
+      state: { hIndex: 0, vIndex: 3, hSpan: [6, 9] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'winA',
+      'right',
+      fakeConfig,
+      [winA, winB, winC]
+    );
+
+    // Так как справа [9, 12] абсолютно свободно, winA должен расшириться до [0, 4]
+    // Соседи сдвинутся вправо: winB -> [4, 7], winC -> [7, 10]
+    expect(chain['winA'].hSpan).toEqual([0, 4]);
+    expect(chain['winB'].hSpan).toEqual([4, 7]);
+    expect(chain['winC'].hSpan).toEqual([7, 10]);
   });
 });
