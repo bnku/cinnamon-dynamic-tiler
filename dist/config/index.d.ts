@@ -1,4 +1,4 @@
-import { Config } from '../engine/types';
+import { Config } from '../core/types';
 export declare const DEFAULT_CONFIG: Config;
 export declare class ConfigManager {
     private static readonly CONFIG_DIR;

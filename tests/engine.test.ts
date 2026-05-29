@@ -1,5 +1,5 @@
-import { TilingEngine } from '../src/engine';
-import { ScreenInfo, WindowState, Config } from '../src/engine/types';
+import { TilingEngine } from '../src/core/TilingEngine';
+import { ScreenInfo, WindowState, Config } from '../src/core/types';
 
 describe('TilingEngine - 12-Column Layout Calculations', () => {
   const fakeScreen: ScreenInfo = {

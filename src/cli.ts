@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 
 import * as dgram from 'dgram';
-import { TilingEngine } from './engine';
-import { ShellAdapter } from './adapter';
-import { CacheManager } from './cache';
+import { TilingUseCase } from './core/usecases/TilingUseCase';
+import { X11ShellAdapter } from './infrastructure/x11/X11ShellAdapter';
+import { JsonFileCache } from './infrastructure/cache/JsonFileCache';
 import { ConfigManager } from './config';
-import { Direction, WindowState } from './engine/types';
+import { Direction } from './core/types';
 
 const PORT = 12345;
 const HOST = '127.0.0.1';
+
+const shell = new X11ShellAdapter();
+const cache = new JsonFileCache();
+const tilingUseCase = new TilingUseCase(shell, cache);
 
 function printUsage(): void {
   console.log('Usage:');
@@ -26,161 +30,22 @@ function printUsage(): void {
  * Основное бизнес-ядро тайлинга окон
  */
 function tileWindow(direction: Direction): void {
-  // 0. Загружаем свежую конфигурацию пользователя
   const config = ConfigManager.getConfig();
-
-  // 1. Получаем ID активного окна
-  const windowId = ShellAdapter.getActiveWindowId();
-  if (!windowId) {
-    throw new Error('Could not retrieve active window ID.');
-  }
-
-  // 2. Получаем физическую геометрию окна, тени и список мониторов
-  const windowGeom = ShellAdapter.getWindowGeometry(windowId);
-  const extents = ShellAdapter.getFrameExtents(windowId);
-  const monitors = ShellAdapter.getActiveMonitors();
-  
-  // Вычисляем ЧИСТУЮ видимую геометрию окна на данный момент (без теней!)
-  const visibleGeom = {
-    x: windowGeom.x + extents.left,
-    y: windowGeom.y + extents.top,
-    width: windowGeom.width - extents.left - extents.right,
-    height: windowGeom.height - extents.top - extents.bottom,
-  };
-
-  // 3. Определяем текущий монитор активного окна
-  const activeMonitor = ShellAdapter.findMonitorForWindow(windowGeom, monitors);
-
-  // 4. Сканируем видимые окна и фильтруем активные затайленные на этом мониторе
-  const visibleWindowIds = ShellAdapter.getVisibleWindowIds();
-  const allCached = CacheManager.getAllCachedWindows();
-  const activeWindowsOnMonitor: { windowId: string; state: WindowState }[] = [];
-
-  // Проверяем Smart Reset (ручное изменение размеров) только для самого АКТИВНОГО окна
-  let activeWindowIsResized = false;
-  const activeCached = allCached[windowId];
-  if (activeCached) {
-    try {
-      const currentGeom = ShellAdapter.getWindowGeometry(windowId);
-      const ext = ShellAdapter.getFrameExtents(windowId);
-      const currentVisible = {
-        x: currentGeom.x + ext.left,
-        y: currentGeom.y + ext.top,
-        width: currentGeom.width - ext.left - ext.right,
-        height: currentGeom.height - ext.top - ext.bottom,
-      };
-
-      const diffX = Math.abs(currentVisible.x - activeCached.tiledGeometry.x);
-      const diffY = Math.abs(currentVisible.y - activeCached.tiledGeometry.y);
-      const diffW = Math.abs(currentVisible.width - activeCached.tiledGeometry.width);
-      const diffH = Math.abs(currentVisible.height - activeCached.tiledGeometry.height);
-
-      const THRESHOLD = 80;
-      if (diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD) {
-        activeWindowIsResized = true;
-      }
-    } catch {
-      // Игнорируем ошибки для активного окна
-    }
-  }
-
-  for (const id of visibleWindowIds) {
-    // Если это само активное окно, и оно было вручную изменено в размерах,
-    // мы его НЕ добавляем в activeWindowsOnMonitor, чтобы для него сработал первый тайлинг (Smart Reset)
-    if (id === windowId && activeWindowIsResized) {
-      continue;
-    }
-
-    const cachedWin = allCached[id];
-    if (!cachedWin) continue;
-
-    // Проверяем, принадлежит ли окно активному монитору по его кэшированной геометрии
-    const monitor = ShellAdapter.findMonitorForWindow(cachedWin.tiledGeometry, monitors);
-    if (monitor.id !== activeMonitor.id) continue;
-
-    // Проверяем на старую схему состояния
-    const isOldStateSchema = typeof (cachedWin.state as any).hIndex !== 'number' || typeof (cachedWin.state as any).vIndex !== 'number';
-    if (isOldStateSchema) continue;
-
-    activeWindowsOnMonitor.push({
-      windowId: id,
-      state: cachedWin.state
-    });
-  }
-
-  // 5. Рассчитываем переходы цепного тайлинга окон
-  const chainStates = TilingEngine.calculateChainTransitions(
-    windowId,
-    direction,
-    config,
-    activeWindowsOnMonitor
-  );
-
-  // 6. Применяем новые размеры сначала ко всем соседям цепочки
-  for (const [id, nextState] of Object.entries(chainStates)) {
-    if (id === windowId) continue;
-
-    try {
-      const cachedWin = allCached[id];
-      const currentGeom = ShellAdapter.getWindowGeometry(id);
-      const originalGeom = cachedWin ? (cachedWin.originalGeometry || currentGeom) : currentGeom;
-
-      const nextGeom = TilingEngine.stateToGeometry(nextState, activeMonitor, config);
-      ShellAdapter.unmaximizeWindow(id);
-      ShellAdapter.applyGeometry(id, nextGeom);
-      CacheManager.saveState(id, nextState, nextGeom, originalGeom);
-    } catch {
-      // Игнорируем ошибки для отдельных окон
-    }
-  }
-
-  // 7. И в самом конце применяем изменения к активному окну, чтобы оно гарантированно было поверх
-  const activeNextState = chainStates[windowId];
-  if (activeNextState) {
-    const cachedWin = allCached[windowId];
-    const originalGeom = cachedWin ? (cachedWin.originalGeometry || windowGeom) : windowGeom;
-
-    const nextGeom = TilingEngine.stateToGeometry(activeNextState, activeMonitor, config);
-    ShellAdapter.unmaximizeWindow(windowId);
-    ShellAdapter.applyGeometry(windowId, nextGeom);
-    CacheManager.saveState(windowId, activeNextState, nextGeom, originalGeom);
-  }
+  tilingUseCase.tile(direction, config);
 }
 
 /**
  * Восстанавливает геометрию активного окна к ее исходному состоянию до тайлинга
  */
 function restoreActiveWindowGeometry(): void {
-  const windowId = ShellAdapter.getActiveWindowId();
-  if (!windowId) {
-    throw new Error('Could not retrieve active window ID.');
-  }
-
-  const cached = CacheManager.getState(windowId);
-  if (cached && cached.originalGeometry) {
-    // Снимаем максимизацию, если она есть
-    ShellAdapter.unmaximizeWindow(windowId);
-    
-    // Возвращаем исходный размер напрямую через wmctrl (сырые физические координаты)
-    ShellAdapter.applyRawPhysicalGeometry(windowId, cached.originalGeometry);
-    
-    // Очищаем кэш для этого окна
-    CacheManager.clearState(windowId);
-  } else {
-    throw new Error('No original geometry saved for this window.');
-  }
+  tilingUseCase.restore();
 }
 
 /**
  * Очистка кэша для текущего активного окна
  */
 function clearActiveWindowCache(): void {
-  const windowId = ShellAdapter.getActiveWindowId();
-  if (windowId) {
-    CacheManager.clearState(windowId);
-  } else {
-    throw new Error('Could not get active window ID for clearing cache.');
-  }
+  tilingUseCase.clearCache();
 }
 
 /**
@@ -293,7 +158,6 @@ switch (command) {
     break;
 
   case 'stop':
-    // Посылаем сигнал остановки демону по UDP
     try {
       const client = dgram.createSocket('udp4');
       client.send('stop', PORT, HOST, (err) => {
@@ -312,7 +176,7 @@ switch (command) {
     break;
 
   case 'version':
-    console.log('dynamic-tiler v1.5.0 (with 12-Column Grid, Gaps, Daemon and Elastic Tiling)');
+    console.log('dynamic-tiler v1.5.0 (Clean Architecture, 12-Column Grid, Gaps, Daemon and Elastic Tiling)');
     break;
 
   default:

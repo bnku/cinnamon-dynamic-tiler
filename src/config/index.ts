@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { Config } from '../engine/types';
+import { Config } from '../core/types';
 
 export const DEFAULT_CONFIG: Config = {
   horizontalFractions: [2, 3, 4, 5, 6, 7, 8],

@@ -1,0 +1,128 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TilingUseCase = void 0;
+const TilingEngine_1 = require("../TilingEngine");
+class TilingUseCase {
+    shell;
+    cache;
+    constructor(shell, cache) {
+        this.shell = shell;
+        this.cache = cache;
+    }
+    tile(direction, config) {
+        // 1. Получаем ID активного окна
+        const windowId = this.shell.getActiveWindowId();
+        if (!windowId) {
+            throw new Error('Could not retrieve active window ID.');
+        }
+        // 2. Получаем физическую геометрию окна, тени и список мониторов
+        const windowGeom = this.shell.getWindowGeometry(windowId);
+        const extents = this.shell.getFrameExtents(windowId);
+        const monitors = this.shell.getActiveMonitors();
+        // 3. Определяем текущий монитор активного окна
+        const activeMonitor = this.shell.findMonitorForWindow(windowGeom, monitors);
+        // 4. Сканируем видимые окна и фильтруем активные затайленные на этом мониторе
+        const visibleWindowIds = this.shell.getVisibleWindowIds();
+        const allCached = this.cache.getAllCachedWindows();
+        const activeWindowsOnMonitor = [];
+        // Проверяем Smart Reset (ручное изменение размеров) только для самого АКТИВНОГО окна
+        let activeWindowIsResized = false;
+        const activeCached = allCached[windowId];
+        if (activeCached) {
+            try {
+                const currentGeom = this.shell.getWindowGeometry(windowId);
+                const ext = this.shell.getFrameExtents(windowId);
+                const currentVisible = {
+                    x: currentGeom.x + ext.left,
+                    y: currentGeom.y + ext.top,
+                    width: currentGeom.width - ext.left - ext.right,
+                    height: currentGeom.height - ext.top - ext.bottom,
+                };
+                const diffX = Math.abs(currentVisible.x - activeCached.tiledGeometry.x);
+                const diffY = Math.abs(currentVisible.y - activeCached.tiledGeometry.y);
+                const diffW = Math.abs(currentVisible.width - activeCached.tiledGeometry.width);
+                const diffH = Math.abs(currentVisible.height - activeCached.tiledGeometry.height);
+                const THRESHOLD = 80;
+                if (diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD) {
+                    activeWindowIsResized = true;
+                }
+            }
+            catch {
+                // Игнорируем ошибки для активного окна
+            }
+        }
+        for (const id of visibleWindowIds) {
+            if (id === windowId && activeWindowIsResized) {
+                continue;
+            }
+            const cachedWin = allCached[id];
+            if (!cachedWin)
+                continue;
+            const monitor = this.shell.findMonitorForWindow(cachedWin.tiledGeometry, monitors);
+            if (monitor.id !== activeMonitor.id)
+                continue;
+            const isOldStateSchema = typeof cachedWin.state.hIndex !== 'number' || typeof cachedWin.state.vIndex !== 'number';
+            if (isOldStateSchema)
+                continue;
+            activeWindowsOnMonitor.push({
+                windowId: id,
+                state: cachedWin.state
+            });
+        }
+        // 5. Рассчитываем переходы цепного тайлинга окон
+        const chainStates = TilingEngine_1.TilingEngine.calculateChainTransitions(windowId, direction, config, activeWindowsOnMonitor);
+        // 6. Применяем новые размеры сначала ко всем соседям цепочки
+        for (const [id, nextState] of Object.entries(chainStates)) {
+            if (id === windowId)
+                continue;
+            try {
+                const cachedWin = allCached[id];
+                const currentGeom = this.shell.getWindowGeometry(id);
+                const originalGeom = cachedWin ? (cachedWin.originalGeometry || currentGeom) : currentGeom;
+                const nextGeom = TilingEngine_1.TilingEngine.stateToGeometry(nextState, activeMonitor, config);
+                this.shell.unmaximizeWindow(id);
+                this.shell.applyGeometry(id, nextGeom);
+                this.cache.saveState(id, nextState, nextGeom, originalGeom);
+            }
+            catch {
+                // Игнорируем ошибки для отдельных окон
+            }
+        }
+        // 7. Применяем изменения к активному окну в конце
+        const activeNextState = chainStates[windowId];
+        if (activeNextState) {
+            const cachedWin = allCached[windowId];
+            const originalGeom = cachedWin ? (cachedWin.originalGeometry || windowGeom) : windowGeom;
+            const nextGeom = TilingEngine_1.TilingEngine.stateToGeometry(activeNextState, activeMonitor, config);
+            this.shell.unmaximizeWindow(windowId);
+            this.shell.applyGeometry(windowId, nextGeom);
+            this.cache.saveState(windowId, activeNextState, nextGeom, originalGeom);
+            this.shell.raiseWindow(windowId);
+        }
+    }
+    restore() {
+        const windowId = this.shell.getActiveWindowId();
+        if (!windowId) {
+            throw new Error('Could not retrieve active window ID.');
+        }
+        const cached = this.cache.getCachedWindow(windowId);
+        if (cached && cached.originalGeometry) {
+            this.shell.unmaximizeWindow(windowId);
+            this.shell.applyGeometry(windowId, cached.originalGeometry);
+            this.cache.clearState(windowId);
+        }
+        else {
+            throw new Error('No original geometry saved for this window.');
+        }
+    }
+    clearCache() {
+        const windowId = this.shell.getActiveWindowId();
+        if (windowId) {
+            this.cache.clearState(windowId);
+        }
+        else {
+            throw new Error('Could not get active window ID for clearing cache.');
+        }
+    }
+}
+exports.TilingUseCase = TilingUseCase;
