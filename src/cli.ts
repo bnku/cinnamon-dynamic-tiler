@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-import * as dgram from 'dgram';
 import { TilingUseCase } from './core/usecases/TilingUseCase';
 import { X11ShellAdapter } from './infrastructure/x11/X11ShellAdapter';
 import { JsonFileCache } from './infrastructure/cache/JsonFileCache';
-import { ConfigManager } from './config';
+import { JsonFileConfigProvider } from './infrastructure/config/JsonFileConfigProvider';
+import { UdpDaemon } from './infrastructure/daemon/UdpDaemon';
 import { Direction } from './core/types';
 
 const PORT = 12345;
@@ -12,7 +12,9 @@ const HOST = '127.0.0.1';
 
 const shell = new X11ShellAdapter();
 const cache = new JsonFileCache();
-const tilingUseCase = new TilingUseCase(shell, cache);
+const configProvider = new JsonFileConfigProvider();
+const tilingUseCase = new TilingUseCase(shell, cache, configProvider);
+const daemon = new UdpDaemon(tilingUseCase, PORT, HOST);
 
 function printUsage(): void {
   console.log('Usage:');
@@ -26,80 +28,7 @@ function printUsage(): void {
   process.exit(1);
 }
 
-/**
- * Основное бизнес-ядро тайлинга окон
- */
-function tileWindow(direction: Direction): void {
-  const config = ConfigManager.getConfig();
-  tilingUseCase.tile(direction, config);
-}
-
-/**
- * Восстанавливает геометрию активного окна к ее исходному состоянию до тайлинга
- */
-function restoreActiveWindowGeometry(): void {
-  tilingUseCase.restore();
-}
-
-/**
- * Очистка кэша для текущего активного окна
- */
-function clearActiveWindowCache(): void {
-  tilingUseCase.clearCache();
-}
-
-/**
- * Запуск фонового UDP-демона
- */
-function startDaemon(): void {
-  const server = dgram.createSocket('udp4');
-
-  server.on('listening', () => {
-    const address = server.address();
-    console.log(`Dynamic Tiler Daemon successfully started on ${address.address}:${address.port}`);
-  });
-
-  server.on('message', (msg) => {
-    const messageStr = msg.toString().trim();
-
-    try {
-      if (messageStr.startsWith('tile ')) {
-        const direction = messageStr.substring(5) as Direction;
-        console.log(`[Daemon] Received tile command: ${direction}`);
-        tileWindow(direction);
-      } else if (messageStr.startsWith('shift ')) {
-        const subDir = messageStr.substring(6);
-        const direction = `shift-${subDir}` as Direction;
-        console.log(`[Daemon] Received shift command: ${direction}`);
-        tileWindow(direction);
-      } else if (messageStr === 'restore') {
-        console.log('[Daemon] Received restore command');
-        restoreActiveWindowGeometry();
-      } else if (messageStr === 'clear') {
-        console.log('[Daemon] Received clear command');
-        clearActiveWindowCache();
-      } else if (messageStr === 'stop') {
-        console.log('[Daemon] Stopping daemon as requested...');
-        server.close();
-        process.exit(0);
-      }
-    } catch (error: any) {
-      console.error(`[Daemon Error] Failed to process message "${messageStr}":`, error.message);
-    }
-  });
-
-  server.on('error', (err) => {
-    console.error('[Daemon Error] Server error:', err.message);
-    server.close();
-    process.exit(1);
-  });
-
-  server.bind(PORT, HOST);
-}
-
-// Разбор аргументов командной строки при прямом вызове
 const args = process.argv.slice(2);
-
 if (args.length === 0) {
   printUsage();
 }
@@ -113,7 +42,7 @@ switch (command) {
       printUsage();
     }
     try {
-      tileWindow(args[1] as Direction);
+      tilingUseCase.tile(args[1] as Direction);
     } catch (error: any) {
       console.error('Tiling Error:', error.message);
       process.exit(1);
@@ -126,7 +55,7 @@ switch (command) {
       printUsage();
     }
     try {
-      tileWindow(`shift-${args[1]}` as Direction);
+      tilingUseCase.tile(`shift-${args[1]}` as Direction);
     } catch (error: any) {
       console.error('Shift Error:', error.message);
       process.exit(1);
@@ -135,7 +64,7 @@ switch (command) {
 
   case 'restore':
     try {
-      restoreActiveWindowGeometry();
+      tilingUseCase.restore();
       console.log('Window geometry restored successfully.');
     } catch (error: any) {
       console.error('Error:', error.message);
@@ -145,7 +74,7 @@ switch (command) {
 
   case 'clear':
     try {
-      clearActiveWindowCache();
+      tilingUseCase.clearCache();
       console.log('Cache cleared successfully.');
     } catch (error: any) {
       console.error('Error:', error.message);
@@ -154,21 +83,12 @@ switch (command) {
     break;
 
   case 'start':
-    startDaemon();
+    daemon.start();
     break;
 
   case 'stop':
     try {
-      const client = dgram.createSocket('udp4');
-      client.send('stop', PORT, HOST, (err) => {
-        client.close();
-        if (err) {
-          console.error('Error sending stop signal to daemon:', err.message);
-          process.exit(1);
-        }
-        console.log('Stop signal sent to daemon.');
-        process.exit(0);
-      });
+      daemon.sendStopSignal();
     } catch (error: any) {
       console.error('Error stopping daemon:', error.message);
       process.exit(1);
@@ -176,7 +96,7 @@ switch (command) {
     break;
 
   case 'version':
-    console.log('dynamic-tiler v1.5.0 (Clean Architecture, 12-Column Grid, Gaps, Daemon and Elastic Tiling)');
+    console.log('dynamic-tiler v2.0.0 (Clean Architecture Facade, 12-Column Grid, Gaps, UdpDaemon and Elastic Tiling)');
     break;
 
   default:

@@ -1,15 +1,20 @@
-import { Direction, Config, WindowState } from '../types';
+import { Direction, WindowState } from '../types';
 import { IShellAdapter } from '../ports/IShellAdapter';
 import { ICacheManager } from '../ports/ICacheManager';
+import { IConfigProvider } from '../ports/IConfigProvider';
 import { TilingEngine } from '../TilingEngine';
 
 export class TilingUseCase {
   constructor(
     private shell: IShellAdapter,
-    private cache: ICacheManager
+    private cache: ICacheManager,
+    private configProvider: IConfigProvider
   ) {}
 
-  public tile(direction: Direction, config: Config): void {
+  public tile(direction: Direction): void {
+    // 0. Получаем конфигурацию
+    const config = this.configProvider.getConfig();
+
     // 1. Получаем ID активного окна
     const windowId = this.shell.getActiveWindowId();
     if (!windowId) {

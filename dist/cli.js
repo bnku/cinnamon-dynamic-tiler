@@ -1,49 +1,18 @@
 #!/usr/bin/env node
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
-const dgram = __importStar(require("dgram"));
 const TilingUseCase_1 = require("./core/usecases/TilingUseCase");
 const X11ShellAdapter_1 = require("./infrastructure/x11/X11ShellAdapter");
 const JsonFileCache_1 = require("./infrastructure/cache/JsonFileCache");
-const config_1 = require("./config");
+const JsonFileConfigProvider_1 = require("./infrastructure/config/JsonFileConfigProvider");
+const UdpDaemon_1 = require("./infrastructure/daemon/UdpDaemon");
 const PORT = 12345;
 const HOST = '127.0.0.1';
 const shell = new X11ShellAdapter_1.X11ShellAdapter();
 const cache = new JsonFileCache_1.JsonFileCache();
-const tilingUseCase = new TilingUseCase_1.TilingUseCase(shell, cache);
+const configProvider = new JsonFileConfigProvider_1.JsonFileConfigProvider();
+const tilingUseCase = new TilingUseCase_1.TilingUseCase(shell, cache, configProvider);
+const daemon = new UdpDaemon_1.UdpDaemon(tilingUseCase, PORT, HOST);
 function printUsage() {
     console.log('Usage:');
     console.log('  dynamic-tiler tile <left|right|up|down>  - Snap and resize active window');
@@ -55,74 +24,6 @@ function printUsage() {
     console.log('  dynamic-tiler version                    - Print current version');
     process.exit(1);
 }
-/**
- * Основное бизнес-ядро тайлинга окон
- */
-function tileWindow(direction) {
-    const config = config_1.ConfigManager.getConfig();
-    tilingUseCase.tile(direction, config);
-}
-/**
- * Восстанавливает геометрию активного окна к ее исходному состоянию до тайлинга
- */
-function restoreActiveWindowGeometry() {
-    tilingUseCase.restore();
-}
-/**
- * Очистка кэша для текущего активного окна
- */
-function clearActiveWindowCache() {
-    tilingUseCase.clearCache();
-}
-/**
- * Запуск фонового UDP-демона
- */
-function startDaemon() {
-    const server = dgram.createSocket('udp4');
-    server.on('listening', () => {
-        const address = server.address();
-        console.log(`Dynamic Tiler Daemon successfully started on ${address.address}:${address.port}`);
-    });
-    server.on('message', (msg) => {
-        const messageStr = msg.toString().trim();
-        try {
-            if (messageStr.startsWith('tile ')) {
-                const direction = messageStr.substring(5);
-                console.log(`[Daemon] Received tile command: ${direction}`);
-                tileWindow(direction);
-            }
-            else if (messageStr.startsWith('shift ')) {
-                const subDir = messageStr.substring(6);
-                const direction = `shift-${subDir}`;
-                console.log(`[Daemon] Received shift command: ${direction}`);
-                tileWindow(direction);
-            }
-            else if (messageStr === 'restore') {
-                console.log('[Daemon] Received restore command');
-                restoreActiveWindowGeometry();
-            }
-            else if (messageStr === 'clear') {
-                console.log('[Daemon] Received clear command');
-                clearActiveWindowCache();
-            }
-            else if (messageStr === 'stop') {
-                console.log('[Daemon] Stopping daemon as requested...');
-                server.close();
-                process.exit(0);
-            }
-        }
-        catch (error) {
-            console.error(`[Daemon Error] Failed to process message "${messageStr}":`, error.message);
-        }
-    });
-    server.on('error', (err) => {
-        console.error('[Daemon Error] Server error:', err.message);
-        server.close();
-        process.exit(1);
-    });
-    server.bind(PORT, HOST);
-}
-// Разбор аргументов командной строки при прямом вызове
 const args = process.argv.slice(2);
 if (args.length === 0) {
     printUsage();
@@ -135,7 +36,7 @@ switch (command) {
             printUsage();
         }
         try {
-            tileWindow(args[1]);
+            tilingUseCase.tile(args[1]);
         }
         catch (error) {
             console.error('Tiling Error:', error.message);
@@ -148,7 +49,7 @@ switch (command) {
             printUsage();
         }
         try {
-            tileWindow(`shift-${args[1]}`);
+            tilingUseCase.tile(`shift-${args[1]}`);
         }
         catch (error) {
             console.error('Shift Error:', error.message);
@@ -157,7 +58,7 @@ switch (command) {
         break;
     case 'restore':
         try {
-            restoreActiveWindowGeometry();
+            tilingUseCase.restore();
             console.log('Window geometry restored successfully.');
         }
         catch (error) {
@@ -167,7 +68,7 @@ switch (command) {
         break;
     case 'clear':
         try {
-            clearActiveWindowCache();
+            tilingUseCase.clearCache();
             console.log('Cache cleared successfully.');
         }
         catch (error) {
@@ -176,20 +77,11 @@ switch (command) {
         }
         break;
     case 'start':
-        startDaemon();
+        daemon.start();
         break;
     case 'stop':
         try {
-            const client = dgram.createSocket('udp4');
-            client.send('stop', PORT, HOST, (err) => {
-                client.close();
-                if (err) {
-                    console.error('Error sending stop signal to daemon:', err.message);
-                    process.exit(1);
-                }
-                console.log('Stop signal sent to daemon.');
-                process.exit(0);
-            });
+            daemon.sendStopSignal();
         }
         catch (error) {
             console.error('Error stopping daemon:', error.message);
@@ -197,7 +89,7 @@ switch (command) {
         }
         break;
     case 'version':
-        console.log('dynamic-tiler v1.5.0 (Clean Architecture, 12-Column Grid, Gaps, Daemon and Elastic Tiling)');
+        console.log('dynamic-tiler v2.0.0 (Clean Architecture Facade, 12-Column Grid, Gaps, UdpDaemon and Elastic Tiling)');
         break;
     default:
         console.error(`Error: Unknown command "${command}"`);

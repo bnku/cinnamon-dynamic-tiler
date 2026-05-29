@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { Config } from '../core/types';
+import { Config } from '../../core/types';
+import { IConfigProvider } from '../../core/ports/IConfigProvider';
 
 export const DEFAULT_CONFIG: Config = {
   horizontalFractions: [2, 3, 4, 5, 6, 7, 8],
@@ -9,22 +10,19 @@ export const DEFAULT_CONFIG: Config = {
   gaps: 0,
 };
 
-export class ConfigManager {
-  private static readonly CONFIG_DIR = path.join(os.homedir(), '.config', 'dynamic-tiler');
-  private static readonly CONFIG_FILE = path.join(this.CONFIG_DIR, 'config.json');
+export class JsonFileConfigProvider implements IConfigProvider {
+  private readonly configDir = path.join(os.homedir(), '.config', 'dynamic-tiler');
+  private readonly configFile = path.join(this.configDir, 'config.json');
 
-  /**
-   * Убеждается в наличии папки и файла конфигурации
-   */
-  private static ensureConfigExists(): void {
-    if (!fs.existsSync(this.CONFIG_DIR)) {
-      fs.mkdirSync(this.CONFIG_DIR, { recursive: true });
+  private ensureConfigExists(): void {
+    if (!fs.existsSync(this.configDir)) {
+      fs.mkdirSync(this.configDir, { recursive: true });
     }
 
-    if (!fs.existsSync(this.CONFIG_FILE)) {
+    if (!fs.existsSync(this.configFile)) {
       try {
         fs.writeFileSync(
-          this.CONFIG_FILE,
+          this.configFile,
           JSON.stringify(DEFAULT_CONFIG, null, 2),
           'utf8'
         );
@@ -34,17 +32,13 @@ export class ConfigManager {
     }
   }
 
-  /**
-   * Считывает и возвращает конфигурацию пользователя
-   */
-  public static getConfig(): Config {
+  public getConfig(): Config {
     this.ensureConfigExists();
 
     try {
-      const content = fs.readFileSync(this.CONFIG_FILE, 'utf8');
+      const content = fs.readFileSync(this.configFile, 'utf8');
       const parsed = JSON.parse(content);
       
-      // Базовая валидация структуры
       return {
         horizontalFractions: Array.isArray(parsed.horizontalFractions) && parsed.horizontalFractions.length > 0
           ? parsed.horizontalFractions.map(Number)

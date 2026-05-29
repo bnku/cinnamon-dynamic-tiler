@@ -5,11 +5,15 @@ const TilingEngine_1 = require("../TilingEngine");
 class TilingUseCase {
     shell;
     cache;
-    constructor(shell, cache) {
+    configProvider;
+    constructor(shell, cache, configProvider) {
         this.shell = shell;
         this.cache = cache;
+        this.configProvider = configProvider;
     }
-    tile(direction, config) {
+    tile(direction) {
+        // 0. Получаем конфигурацию
+        const config = this.configProvider.getConfig();
         // 1. Получаем ID активного окна
         const windowId = this.shell.getActiveWindowId();
         if (!windowId) {
