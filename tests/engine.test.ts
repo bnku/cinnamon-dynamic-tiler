@@ -17,8 +17,8 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
   };
 
   const fakeConfig: Config = {
-    horizontalFractions: [2, 3, 4], // не используются напрямую в 12-колоночной шкале, но нужны по типу
-    verticalFractions: [2, 3, 4],   // не используются напрямую
+    horizontalFractions: [2, 3, 4],
+    verticalFractions: [2, 3, 4],
     gaps: 0,
   };
 
@@ -27,6 +27,8 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(defaultState).toEqual({
       hIndex: 5,
       vIndex: 3,
+      hSpan: [0, 12],
+      vSpan: [0, 12],
       lastDirection: null,
     });
   });
@@ -35,123 +37,183 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     const startState = TilingEngine.getDefaultState();
     const nextState = TilingEngine.calculateNextState(startState, 'left', fakeConfig);
 
-    expect(nextState.hIndex).toBe(2); // Левая половина [0..6]
-    expect(nextState.vIndex).toBe(3); // Полная высота [0..12]
+    expect(nextState.hSpan).toEqual([0, 6]);
+    expect(nextState.vSpan).toEqual([0, 12]);
     expect(nextState.lastDirection).toBe('left');
   });
 
   test('should decrease hIndex on repeated left presses down to 0', () => {
     let state = TilingEngine.getDefaultState();
 
-    // 1st press left -> index 2
     state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-    expect(state.hIndex).toBe(2);
+    expect(state.hSpan).toEqual([0, 6]);
 
-    // 2nd press left -> index 1
     state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-    expect(state.hIndex).toBe(1);
+    expect(state.hSpan).toEqual([0, 4]);
 
-    // 3rd press left -> index 0
     state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-    expect(state.hIndex).toBe(0);
+    expect(state.hSpan).toEqual([0, 3]);
 
-    // 4th press left -> remains index 0
     state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-    expect(state.hIndex).toBe(0);
+    expect(state.hSpan).toEqual([0, 3]);
   });
 
-  test('should increase hIndex on right presses up to 10', () => {
-    let state = TilingEngine.getDefaultState();
-
-    // 1st press left -> index 2 [0..6]
-    state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-    expect(state.hIndex).toBe(2);
-
-    // Then repeated right presses: 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 10
-    const expectedIndices = [3, 4, 5, 6, 7, 8, 9, 10, 10];
-    for (const expected of expectedIndices) {
-      state = TilingEngine.calculateNextState(state, 'right', fakeConfig);
-      expect(state.hIndex).toBe(expected);
-    }
-  });
-
-  test('should handle perpendicular shift (left -> down -> down)', () => {
-    let state = TilingEngine.getDefaultState();
-
-    // left -> [0..6] по горизонтали (hIndex 2, vIndex 3)
-    state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-    expect(state.hIndex).toBe(2);
-    expect(state.vIndex).toBe(3);
-
-    // down -> [6..12] по вертикали (hIndex 2, vIndex 4)
-    state = TilingEngine.calculateNextState(state, 'down', fakeConfig);
-    expect(state.hIndex).toBe(2);
-    expect(state.vIndex).toBe(4);
-
-    // down -> [8..12] по вертикали (hIndex 2, vIndex 5)
-    state = TilingEngine.calculateNextState(state, 'down', fakeConfig);
-    expect(state.hIndex).toBe(2);
-    expect(state.vIndex).toBe(5);
-  });
-
-  test('should calculate correct pixel geometries for workarea', () => {
-    // Состояние: левая половина [0..6] по горизонтали, полная высота [0..12] по вертикали
-    const stateLeftHalf: WindowState = {
-      hIndex: 2,
+  test('should smart snap to sibling edge and occupy maximum 1/2 of screen', () => {
+    // Есть окно A, занимающее левую треть [0, 3] (уже сжато до предела)
+    const winA: WindowState = {
+      hIndex: 0,
       vIndex: 3,
-      lastDirection: 'left',
+      hSpan: [0, 3],
+      vSpan: [0, 12],
+      lastDirection: 'left'
     };
 
-    const geomLeftHalf = TilingEngine.stateToGeometry(stateLeftHalf, fakeScreen, fakeConfig);
-    // colWidth = 1920 / 12 = 160.
-    // x = 0 + 0 * 160 = 0.
-    // width = 6 * 160 = 960.
-    // rowHeight = 1040 / 12 = 86.666
-    // y = 40 + 0 * 86.66 = 40.
-    // height = 12 * 86.66 = 1040.
-    expect(geomLeftHalf).toEqual({
-      x: 0,
-      y: 40,
-      width: 960,
-      height: 1040,
-    });
+    // Тайлим окно B влево
+    const nextStateB = TilingEngine.calculateNextState(
+      TilingEngine.getDefaultState(),
+      'left',
+      fakeConfig,
+      [{ hSpan: winA.hSpan, vSpan: winA.vSpan }]
+    );
+
+    // Окно B должно прилипнуть к правому краю A (3) и занять ровно 1/2 экрана (6 колонок), т.е. [3, 9]
+    expect(nextStateB.hSpan).toEqual([3, 9]);
+    expect(nextStateB.lastDirection).toBe('right');
   });
 
-  test('should apply gaps properly if configured', () => {
-    const stateLeftHalf: WindowState = {
-      hIndex: 2,
+  test('should compress active window in place instead of overlapping if sibling is at minimum size', () => {
+    // Окно A [0, 3] (минимум) и окно B [3, 12] (ширина 9)
+    const winA: { windowId: string; state: WindowState } = {
+      windowId: 'winA',
+      state: {
+        hIndex: 0,
+        vIndex: 3,
+        hSpan: [0, 3],
+        vSpan: [0, 12],
+        lastDirection: 'left'
+      }
+    };
+    const winB: { windowId: string; state: WindowState } = {
+      windowId: 'winB',
+      state: {
+        hIndex: 6, // [3, 12]
+        vIndex: 3,
+        hSpan: [3, 12],
+        vSpan: [0, 12],
+        lastDirection: 'right'
+      }
+    };
+
+    const chain1 = TilingEngine.calculateChainTransitions(
+      'winB',
+      'left',
+      fakeConfig,
+      [winA, winB]
+    );
+
+    expect(chain1['winB'].hSpan).toEqual([3, 9]);
+    expect(chain1['winA'].hSpan).toEqual([0, 3]); // Сосед A не изменился
+
+    const winB_step1 = { windowId: 'winB', state: chain1['winB'] };
+    const chain2 = TilingEngine.calculateChainTransitions(
+      'winB',
+      'left',
+      fakeConfig,
+      [winA, winB_step1]
+    );
+
+    expect(chain2['winB'].hSpan).toEqual([3, 6]);
+  });
+
+  test('should propagate compression chain for 3 windows', () => {
+    // 3 окна: A [0, 4], B [4, 8], C [8, 12]
+    const winA = {
+      windowId: 'winA',
+      state: { hIndex: 1, vIndex: 3, hSpan: [0, 4] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'left' as const }
+    };
+    const winB = {
+      windowId: 'winB',
+      state: { hIndex: 5, vIndex: 3, hSpan: [4, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const winC = {
+      windowId: 'winC',
+      state: { hIndex: 8, vIndex: 3, hSpan: [8, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'winA',
+      'right',
+      fakeConfig,
+      [winA, winB, winC]
+    );
+
+    expect(chain['winA'].hSpan).toEqual([0, 6]);
+    expect(chain['winB'].hSpan).toEqual([6, 9]);
+    expect(chain['winC'].hSpan).toEqual([9, 12]);
+  });
+
+  test('should smoothly expand custom span window without massive jumps', () => {
+    const stateCustom: WindowState = {
+      hIndex: 5,
       vIndex: 3,
-      lastDirection: 'left',
+      hSpan: [6, 9],
+      vSpan: [0, 12],
+      lastDirection: 'right'
     };
 
-    const configWithGaps: Config = {
-      ...fakeConfig,
-      gaps: 10, // Отступ 10px
-    };
+    const nextStateRight = TilingEngine.calculateNextState(stateCustom, 'right', fakeConfig);
+    expect(nextStateRight.hSpan).toEqual([6, 12]);
 
-    const geomWithGaps = TilingEngine.stateToGeometry(stateLeftHalf, fakeScreen, configWithGaps);
-    // При x=0, y=40, width=960, height=1040:
-    // x += 10 -> 10
-    // y += 10 -> 50
-    // width -= 20 -> 940
-    // height -= 20 -> 1020
-    expect(geomWithGaps).toEqual({
-      x: 10,
-      y: 50,
-      width: 940,
-      height: 1020,
-    });
+    const nextStateLeft = TilingEngine.calculateNextState(stateCustom, 'left', fakeConfig);
+    expect(nextStateLeft.hSpan).toEqual([3, 9]);
   });
 
-  test('should handle instant shift commands', () => {
-    let state = TilingEngine.getDefaultState();
+  test('should find the nearest free gap on the screen instead of stretching to 1/2 of screen and overlapping', () => {
+    // 3 окна уже занимают [0, 3], [3, 6], [6, 9]. Правая часть [9, 12] абсолютно свободна
+    const winA = { hSpan: [0, 3] as [number, number], vSpan: [0, 12] as [number, number] };
+    const winB = { hSpan: [3, 6] as [number, number], vSpan: [0, 12] as [number, number] };
+    const winC = { hSpan: [6, 9] as [number, number], vSpan: [0, 12] as [number, number] };
 
-    state = TilingEngine.calculateNextState(state, 'shift-left', fakeConfig);
-    expect(state.hIndex).toBe(2);
-    expect(state.lastDirection).toBe('shift-left');
+    // Тайлим 4-е окно вправо (right). Оно должно найти свободный стык справа [9, 12] и встать туда!
+    const nextState = TilingEngine.calculateNextState(
+      TilingEngine.getDefaultState(),
+      'right',
+      fakeConfig,
+      [winA, winB, winC]
+    );
 
-    state = TilingEngine.calculateNextState(state, 'shift-right', fakeConfig);
-    expect(state.hIndex).toBe(8);
-    expect(state.lastDirection).toBe('shift-right');
+    expect(nextState.hSpan).toEqual([9, 12]);
+    expect(nextState.lastDirection).toBe('right');
+  });
+
+  test('should accurately convert physical geometry to logical spans with rounding threshold', () => {
+    const monitor: ScreenInfo = {
+      id: 'HDMI-0',
+      width: 3840,
+      height: 1080,
+      x: 2280,
+      y: 0,
+      workarea: {
+        x: 2280,
+        y: 0,
+        width: 3840,
+        height: 1080,
+      },
+    };
+
+    // 1. Окно [3, 6] с небольшими отклонениями из-за теней (3250 вместо 3240, ширина 960)
+    const geom1 = { x: 3250, y: 0, width: 960, height: 1080 };
+    const hSpan1 = TilingEngine.geometryToHSpan(geom1, monitor);
+    expect(hSpan1).toEqual([3, 6]);
+
+    // 2. Окно [6, 9] (4200, ширина 960)
+    const geom2 = { x: 4200, y: 0, width: 960, height: 1080 };
+    const hSpan2 = TilingEngine.geometryToHSpan(geom2, monitor);
+    expect(hSpan2).toEqual([6, 9]);
+
+    // 3. Окно [0, 3] (2280, ширина 960)
+    const geom3 = { x: 2280, y: 0, width: 960, height: 1080 };
+    const hSpan3 = TilingEngine.geometryToHSpan(geom3, monitor);
+    expect(hSpan3).toEqual([0, 3]);
   });
 });

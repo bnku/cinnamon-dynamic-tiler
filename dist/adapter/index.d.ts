@@ -52,6 +52,18 @@ export declare class ShellAdapter {
      */
     static getActiveMonitors(): ScreenInfo[];
     /**
+     * Получает список ID всех видимых окон в X11
+     */
+    static getVisibleWindowIds(): string[];
+    /**
+     * Получает список всех окон с их геометриями и заголовками через wmctrl
+     */
+    static getAllWindows(): {
+        id: string;
+        geometry: Geometry;
+        title: string;
+    }[];
+    /**
      * Находит монитор, на котором расположен центр переданного окна
      */
     static findMonitorForWindow(geom: Geometry, monitors: ScreenInfo[]): ScreenInfo;

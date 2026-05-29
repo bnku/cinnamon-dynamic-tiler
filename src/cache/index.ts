@@ -47,6 +47,13 @@ export class CacheManager {
   }
 
   /**
+   * Получает все кэшированные окна
+   */
+  public static getAllCachedWindows(): Record<string, CachedWindowState> {
+    return this.readAllCache();
+  }
+
+  /**
    * Получает сохраненное состояние для конкретного окна
    */
   public static getState(windowId: string): CachedWindowState | null {

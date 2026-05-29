@@ -15,6 +15,10 @@ export declare class CacheManager {
      */
     private static writeAllCache;
     /**
+     * Получает все кэшированные окна
+     */
+    static getAllCachedWindows(): Record<string, CachedWindowState>;
+    /**
      * Получает сохраненное состояние для конкретного окна
      */
     static getState(windowId: string): CachedWindowState | null;

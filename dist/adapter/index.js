@@ -226,6 +226,49 @@ class ShellAdapter {
         return monitors;
     }
     /**
+     * Получает список ID всех видимых окон в X11
+     */
+    static getVisibleWindowIds() {
+        try {
+            const output = this.runCommand('xdotool search --onlyvisible --screen 0 ""');
+            return output.split('\n').map(s => s.trim()).filter(Boolean);
+        }
+        catch {
+            return [];
+        }
+    }
+    /**
+     * Получает список всех окон с их геометриями и заголовками через wmctrl
+     */
+    static getAllWindows() {
+        try {
+            const output = this.runCommand('wmctrl -lG');
+            const lines = output.split('\n');
+            const result = [];
+            for (const line of lines) {
+                const match = line.trim().match(/^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.*)$/);
+                if (!match)
+                    continue;
+                const hexId = match[1];
+                const x = parseInt(match[3], 10);
+                const y = parseInt(match[4], 10);
+                const w = parseInt(match[5], 10);
+                const h = parseInt(match[6], 10);
+                const title = match[8];
+                const decId = parseInt(hexId, 16).toString();
+                result.push({
+                    id: decId,
+                    geometry: { x, y, width: w, height: h },
+                    title,
+                });
+            }
+            return result;
+        }
+        catch {
+            return [];
+        }
+    }
+    /**
      * Находит монитор, на котором расположен центр переданного окна
      */
     static findMonitorForWindow(geom, monitors) {

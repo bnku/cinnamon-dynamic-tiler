@@ -16,6 +16,8 @@ export type Direction = 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift
 export interface WindowState {
     hIndex: number;
     vIndex: number;
+    hSpan: [number, number];
+    vSpan: [number, number];
     lastDirection: Direction | null;
 }
 export interface CachedWindowState {

@@ -78,6 +78,12 @@ class CacheManager {
         }
     }
     /**
+     * Получает все кэшированные окна
+     */
+    static getAllCachedWindows() {
+        return this.readAllCache();
+    }
+    /**
      * Получает сохраненное состояние для конкретного окна
      */
     static getState(windowId) {

@@ -21,6 +21,10 @@ export interface WindowState {
   hIndex: number;
   // Индекс положения окна по вертикали в 12-строчной сетке (0..6)
   vIndex: number;
+  // Точные логические колонки по горизонтали [startCol, endCol] (0..12)
+  hSpan: [number, number];
+  // Точные логические строки по вертикали [startRow, endRow] (0..12)
+  vSpan: [number, number];
   // Последнее примененное направление движения (или null, если окно только открыто)
   lastDirection: Direction | null;
 }
