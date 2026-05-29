@@ -1,7 +1,7 @@
 import { TilingEngine } from '../src/engine';
 import { ScreenInfo, WindowState, Config } from '../src/engine/types';
 
-describe('TilingEngine - Core Layout Calculations', () => {
+describe('TilingEngine - 12-Column Layout Calculations', () => {
   const fakeScreen: ScreenInfo = {
     id: 'HDMI-1',
     width: 1920,
@@ -17,18 +17,16 @@ describe('TilingEngine - Core Layout Calculations', () => {
   };
 
   const fakeConfig: Config = {
-    horizontalFractions: [2, 3, 4, 5, 6, 7, 8],
-    verticalFractions: [2, 3, 4],
+    horizontalFractions: [2, 3, 4], // не используются напрямую в 12-колоночной шкале, но нужны по типу
+    verticalFractions: [2, 3, 4],   // не используются напрямую
     gaps: 0,
   };
 
   test('should return default state', () => {
     const defaultState = TilingEngine.getDefaultState();
     expect(defaultState).toEqual({
-      widthFraction: 1,
-      heightFraction: 1,
-      horizontalAlign: null,
-      verticalAlign: null,
+      hIndex: 5,
+      vIndex: 3,
       lastDirection: null,
     });
   });
@@ -37,49 +35,80 @@ describe('TilingEngine - Core Layout Calculations', () => {
     const startState = TilingEngine.getDefaultState();
     const nextState = TilingEngine.calculateNextState(startState, 'left', fakeConfig);
 
-    expect(nextState.horizontalAlign).toBe('left');
-    expect(nextState.widthFraction).toBe(2);
+    expect(nextState.hIndex).toBe(2); // Левая половина [0..6]
+    expect(nextState.vIndex).toBe(3); // Полная высота [0..12]
     expect(nextState.lastDirection).toBe('left');
-    expect(nextState.heightFraction).toBe(1);
-    expect(nextState.verticalAlign).toBeNull();
   });
 
-  test('should cycle width fractions up to 8 on repeated left presses', () => {
+  test('should decrease hIndex on repeated left presses down to 0', () => {
     let state = TilingEngine.getDefaultState();
 
-    // Цикл по горизонтали: 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 2
-    const expectedFractions = [2, 3, 4, 5, 6, 7, 8, 2];
-    for (const expected of expectedFractions) {
-      state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-      expect(state.widthFraction).toBe(expected);
+    // 1st press left -> index 2
+    state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
+    expect(state.hIndex).toBe(2);
+
+    // 2nd press left -> index 1
+    state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
+    expect(state.hIndex).toBe(1);
+
+    // 3rd press left -> index 0
+    state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
+    expect(state.hIndex).toBe(0);
+
+    // 4th press left -> remains index 0
+    state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
+    expect(state.hIndex).toBe(0);
+  });
+
+  test('should increase hIndex on right presses up to 10', () => {
+    let state = TilingEngine.getDefaultState();
+
+    // 1st press left -> index 2 [0..6]
+    state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
+    expect(state.hIndex).toBe(2);
+
+    // Then repeated right presses: 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 10
+    const expectedIndices = [3, 4, 5, 6, 7, 8, 9, 10, 10];
+    for (const expected of expectedIndices) {
+      state = TilingEngine.calculateNextState(state, 'right', fakeConfig);
+      expect(state.hIndex).toBe(expected);
     }
   });
 
   test('should handle perpendicular shift (left -> down -> down)', () => {
     let state = TilingEngine.getDefaultState();
 
+    // left -> [0..6] по горизонтали (hIndex 2, vIndex 3)
     state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-    expect(state.horizontalAlign).toBe('left');
-    expect(state.widthFraction).toBe(2);
+    expect(state.hIndex).toBe(2);
+    expect(state.vIndex).toBe(3);
 
+    // down -> [6..12] по вертикали (hIndex 2, vIndex 4)
     state = TilingEngine.calculateNextState(state, 'down', fakeConfig);
-    expect(state.verticalAlign).toBe('bottom');
-    expect(state.heightFraction).toBe(2);
+    expect(state.hIndex).toBe(2);
+    expect(state.vIndex).toBe(4);
 
+    // down -> [8..12] по вертикали (hIndex 2, vIndex 5)
     state = TilingEngine.calculateNextState(state, 'down', fakeConfig);
-    expect(state.heightFraction).toBe(3);
+    expect(state.hIndex).toBe(2);
+    expect(state.vIndex).toBe(5);
   });
 
   test('should calculate correct pixel geometries for workarea', () => {
+    // Состояние: левая половина [0..6] по горизонтали, полная высота [0..12] по вертикали
     const stateLeftHalf: WindowState = {
-      widthFraction: 2,
-      heightFraction: 1,
-      horizontalAlign: 'left',
-      verticalAlign: null,
+      hIndex: 2,
+      vIndex: 3,
       lastDirection: 'left',
     };
 
     const geomLeftHalf = TilingEngine.stateToGeometry(stateLeftHalf, fakeScreen, fakeConfig);
+    // colWidth = 1920 / 12 = 160.
+    // x = 0 + 0 * 160 = 0.
+    // width = 6 * 160 = 960.
+    // rowHeight = 1040 / 12 = 86.666
+    // y = 40 + 0 * 86.66 = 40.
+    // height = 12 * 86.66 = 1040.
     expect(geomLeftHalf).toEqual({
       x: 0,
       y: 40,
@@ -90,10 +119,8 @@ describe('TilingEngine - Core Layout Calculations', () => {
 
   test('should apply gaps properly if configured', () => {
     const stateLeftHalf: WindowState = {
-      widthFraction: 2,
-      heightFraction: 1,
-      horizontalAlign: 'left',
-      verticalAlign: null,
+      hIndex: 2,
+      vIndex: 3,
       lastDirection: 'left',
     };
 
@@ -103,11 +130,11 @@ describe('TilingEngine - Core Layout Calculations', () => {
     };
 
     const geomWithGaps = TilingEngine.stateToGeometry(stateLeftHalf, fakeScreen, configWithGaps);
-    // При ширине 960 и высоте 1040 с отступами 10px:
-    // x должен сдвинуться на +10 -> 10
-    // y должен сдвинуться на +10 -> 50 (40 + 10)
-    // width должен уменьшиться на 20 -> 940 (960 - 20)
-    // height должен уменьшиться на 20 -> 1020 (1040 - 20)
+    // При x=0, y=40, width=960, height=1040:
+    // x += 10 -> 10
+    // y += 10 -> 50
+    // width -= 20 -> 940
+    // height -= 20 -> 1020
     expect(geomWithGaps).toEqual({
       x: 10,
       y: 50,
@@ -116,22 +143,15 @@ describe('TilingEngine - Core Layout Calculations', () => {
     });
   });
 
-  test('should handle reverse transitions (left -> left -> right -> right)', () => {
+  test('should handle instant shift commands', () => {
     let state = TilingEngine.getDefaultState();
 
-    state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-    expect(state.horizontalAlign).toBe('left');
-    expect(state.widthFraction).toBe(2);
+    state = TilingEngine.calculateNextState(state, 'shift-left', fakeConfig);
+    expect(state.hIndex).toBe(2);
+    expect(state.lastDirection).toBe('shift-left');
 
-    state = TilingEngine.calculateNextState(state, 'left', fakeConfig);
-    expect(state.widthFraction).toBe(3);
-
-    state = TilingEngine.calculateNextState(state, 'right', fakeConfig);
-    expect(state.horizontalAlign).toBe('left');
-    expect(state.widthFraction).toBe(2);
-
-    state = TilingEngine.calculateNextState(state, 'right', fakeConfig);
-    expect(state.horizontalAlign).toBe('right');
-    expect(state.widthFraction).toBe(2);
+    state = TilingEngine.calculateNextState(state, 'shift-right', fakeConfig);
+    expect(state.hIndex).toBe(8);
+    expect(state.lastDirection).toBe('shift-right');
   });
 });

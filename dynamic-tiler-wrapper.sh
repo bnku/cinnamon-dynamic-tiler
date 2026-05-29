@@ -20,6 +20,14 @@ if [ "$1" = "tile" ] && [ -n "$2" ]; then
         $NODE_PATH $CLI_PATH "$@"
         exit $?
     fi
+elif [ "$1" = "shift" ] && [ -n "$2" ]; then
+    if pgrep -f "dist/cli.js start" > /dev/null; then
+        send_udp "shift $2"
+        exit 0
+    else
+        $NODE_PATH $CLI_PATH "$@"
+        exit $?
+    fi
 elif [ "$1" = "restore" ]; then
     if pgrep -f "dist/cli.js start" > /dev/null; then
         send_udp "restore"

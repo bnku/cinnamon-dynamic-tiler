@@ -13,6 +13,7 @@ const HOST = '127.0.0.1';
 function printUsage(): void {
   console.log('Usage:');
   console.log('  dynamic-tiler tile <left|right|up|down>  - Snap and resize active window');
+  console.log('  dynamic-tiler shift <left|right>        - Quick shift window to left/right half');
   console.log('  dynamic-tiler restore                    - Restore active window to its original pre-tiled size');
   console.log('  dynamic-tiler clear                      - Clear current window cached state');
   console.log('  dynamic-tiler start                      - Start background UDP daemon');
@@ -65,11 +66,12 @@ function tileWindow(direction: Direction): void {
     // Порог 80px, чтобы сгладить ограничения минимальных размеров окон (size hints)
     const THRESHOLD = 80;
     const wasResizedManually = diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD;
+    const isOldStateSchema = typeof (cached.state as any).hIndex !== 'number' || typeof (cached.state as any).vIndex !== 'number';
 
-    if (wasResizedManually) {
+    if (wasResizedManually || isOldStateSchema) {
       currentState = TilingEngine.getDefaultState();
-      // Если окно изменили вручную, его текущие физические координаты становятся новыми исходными
-      originalGeom = windowGeom;
+      // Если окно изменили вручную или схема устарела, сохраняем оригинальную геометрию, если она есть
+      originalGeom = cached.originalGeometry || windowGeom;
     } else {
       currentState = cached.state;
       // Сохраняем исходные координаты, которые были в самом начале
@@ -150,6 +152,11 @@ function startDaemon(): void {
         const direction = messageStr.substring(5) as Direction;
         console.log(`[Daemon] Received tile command: ${direction}`);
         tileWindow(direction);
+      } else if (messageStr.startsWith('shift ')) {
+        const subDir = messageStr.substring(6);
+        const direction = `shift-${subDir}` as Direction;
+        console.log(`[Daemon] Received shift command: ${direction}`);
+        tileWindow(direction);
       } else if (messageStr === 'restore') {
         console.log('[Daemon] Received restore command');
         restoreActiveWindowGeometry();
@@ -198,6 +205,19 @@ switch (command) {
     }
     break;
 
+  case 'shift':
+    if (args.length < 2) {
+      console.error('Error: Please specify direction.');
+      printUsage();
+    }
+    try {
+      tileWindow(`shift-${args[1]}` as Direction);
+    } catch (error: any) {
+      console.error('Shift Error:', error.message);
+      process.exit(1);
+    }
+    break;
+
   case 'restore':
     try {
       restoreActiveWindowGeometry();
@@ -242,7 +262,7 @@ switch (command) {
     break;
 
   case 'version':
-    console.log('dynamic-tiler v1.4.0 (with Configurable Grid, Gaps and Daemon mode)');
+    console.log('dynamic-tiler v1.5.0 (with 12-Column Grid, Gaps, Daemon and Elastic Tiling)');
     break;
 
   default:

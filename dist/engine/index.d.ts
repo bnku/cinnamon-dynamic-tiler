@@ -1,4 +1,6 @@
 import { Geometry, ScreenInfo, Direction, WindowState, Config } from './types';
+export declare const HORIZONTAL_SPANS: [number, number][];
+export declare const VERTICAL_SPANS: [number, number][];
 export declare class TilingEngine {
     /**
      * Возвращает дефолтное пустое состояние окна (до тайлинга)
@@ -12,8 +14,4 @@ export declare class TilingEngine {
      * Преобразует абстрактные доли WindowState в реальные координаты Geometry с учетом отступов (gaps)
      */
     static stateToGeometry(state: WindowState, screen: ScreenInfo, config: Config): Geometry;
-    /**
-     * Циклический переход долей на основе массива из конфигурации
-     */
-    private static cycleFraction;
 }

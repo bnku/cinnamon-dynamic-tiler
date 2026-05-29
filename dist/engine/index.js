@@ -1,16 +1,36 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TilingEngine = void 0;
+exports.TilingEngine = exports.VERTICAL_SPANS = exports.HORIZONTAL_SPANS = void 0;
+exports.HORIZONTAL_SPANS = [
+    [0, 3], // 0
+    [0, 4], // 1
+    [0, 6], // 2 (left 1/2)
+    [0, 8], // 3
+    [0, 9], // 4
+    [0, 12], // 5 (full width)
+    [3, 12], // 6
+    [4, 12], // 7
+    [6, 12], // 8 (right 1/2)
+    [8, 12], // 9
+    [9, 12], // 10
+];
+exports.VERTICAL_SPANS = [
+    [0, 3], // 0
+    [0, 4], // 1
+    [0, 6], // 2 (top 1/2)
+    [0, 12], // 3 (full height)
+    [6, 12], // 4 (bottom 1/2)
+    [8, 12], // 5
+    [9, 12], // 6
+];
 class TilingEngine {
     /**
      * Возвращает дефолтное пустое состояние окна (до тайлинга)
      */
     static getDefaultState() {
         return {
-            widthFraction: 1,
-            heightFraction: 1,
-            horizontalAlign: null,
-            verticalAlign: null,
+            hIndex: 5, // [0, 12] (полная ширина)
+            vIndex: 3, // [0, 12] (полная высота)
             lastDirection: null,
         };
     }
@@ -19,129 +39,63 @@ class TilingEngine {
      */
     static calculateNextState(currentState, direction, config) {
         const nextState = { ...currentState };
-        const hFractions = config.horizontalFractions;
-        const vFractions = config.verticalFractions;
-        switch (direction) {
-            case 'left':
-                if (currentState.horizontalAlign === 'left') {
-                    if (currentState.lastDirection === 'left') {
-                        // Повторный клик влево: уменьшаем ширину по кругу согласно массиву в конфиге
-                        nextState.widthFraction = this.cycleFraction(currentState.widthFraction, hFractions);
-                    }
-                    else {
-                        nextState.lastDirection = 'left';
-                    }
-                }
-                else if (currentState.horizontalAlign === 'right') {
-                    // Шаг назад / расширение при противоположном движении
-                    const prevIdx = hFractions.indexOf(currentState.widthFraction);
-                    if (prevIdx > 0) {
-                        nextState.widthFraction = hFractions[prevIdx - 1];
-                    }
-                    else {
-                        // Было 1/2 (первое в массиве) -> перекидываем влево
-                        nextState.horizontalAlign = 'left';
-                        nextState.widthFraction = hFractions[0];
-                    }
+        if (currentState.lastDirection === null) {
+            // Первый клик на окне
+            switch (direction) {
+                case 'left':
+                    nextState.hIndex = 2; // Левая половина [0..6]
                     nextState.lastDirection = 'left';
-                }
-                else {
-                    // Первый клик влево
-                    nextState.horizontalAlign = 'left';
-                    nextState.widthFraction = hFractions[0];
+                    break;
+                case 'right':
+                    nextState.hIndex = 8; // Правая половина [6..12]
+                    nextState.lastDirection = 'right';
+                    break;
+                case 'up':
+                    nextState.vIndex = 2; // Верхняя половина [0..6]
+                    nextState.lastDirection = 'up';
+                    break;
+                case 'down':
+                    nextState.vIndex = 4; // Нижняя половина [6..12]
+                    nextState.lastDirection = 'down';
+                    break;
+                case 'shift-left':
+                    nextState.hIndex = 2; // Левая половина [0..6]
+                    nextState.lastDirection = 'shift-left';
+                    break;
+                case 'shift-right':
+                    nextState.hIndex = 8; // Правая половина [6..12]
+                    nextState.lastDirection = 'shift-right';
+                    break;
+            }
+        }
+        else {
+            // Окно уже в режиме тайлинга
+            switch (direction) {
+                case 'left':
+                    nextState.hIndex = Math.max(0, currentState.hIndex - 1);
                     nextState.lastDirection = 'left';
-                }
-                break;
-            case 'right':
-                if (currentState.horizontalAlign === 'right') {
-                    if (currentState.lastDirection === 'right') {
-                        // Повторный клик вправо
-                        nextState.widthFraction = this.cycleFraction(currentState.widthFraction, hFractions);
-                    }
-                    else {
-                        nextState.lastDirection = 'right';
-                    }
-                }
-                else if (currentState.horizontalAlign === 'left') {
-                    // Шаг назад / расширение при противоположном движении
-                    const prevIdx = hFractions.indexOf(currentState.widthFraction);
-                    if (prevIdx > 0) {
-                        nextState.widthFraction = hFractions[prevIdx - 1];
-                    }
-                    else {
-                        // Было 1/2 -> перекидываем вправо
-                        nextState.horizontalAlign = 'right';
-                        nextState.widthFraction = hFractions[0];
-                    }
+                    break;
+                case 'right':
+                    nextState.hIndex = Math.min(10, currentState.hIndex + 1);
                     nextState.lastDirection = 'right';
-                }
-                else {
-                    // Первый клик вправо
-                    nextState.horizontalAlign = 'right';
-                    nextState.widthFraction = hFractions[0];
-                    nextState.lastDirection = 'right';
-                }
-                break;
-            case 'up':
-                if (currentState.verticalAlign === 'top') {
-                    if (currentState.lastDirection === 'up') {
-                        // Повторный клик вверх
-                        nextState.heightFraction = this.cycleFraction(currentState.heightFraction, vFractions);
-                    }
-                    else {
-                        nextState.lastDirection = 'up';
-                    }
-                }
-                else if (currentState.verticalAlign === 'bottom') {
-                    // Шаг назад / расширение по высоте при противоположном движении
-                    const prevIdx = vFractions.indexOf(currentState.heightFraction);
-                    if (prevIdx > 0) {
-                        nextState.heightFraction = vFractions[prevIdx - 1];
-                    }
-                    else {
-                        // Было 1/2 -> перекидываем вверх
-                        nextState.verticalAlign = 'top';
-                        nextState.heightFraction = vFractions[0];
-                    }
+                    break;
+                case 'up':
+                    nextState.vIndex = Math.max(0, currentState.vIndex - 1);
                     nextState.lastDirection = 'up';
-                }
-                else {
-                    // Первый клик вверх
-                    nextState.verticalAlign = 'top';
-                    nextState.heightFraction = vFractions[0];
-                    nextState.lastDirection = 'up';
-                }
-                break;
-            case 'down':
-                if (currentState.verticalAlign === 'bottom') {
-                    if (currentState.lastDirection === 'down') {
-                        // Повторный клик вниз
-                        nextState.heightFraction = this.cycleFraction(currentState.heightFraction, vFractions);
-                    }
-                    else {
-                        nextState.lastDirection = 'down';
-                    }
-                }
-                else if (currentState.verticalAlign === 'top') {
-                    // Шаг назад / расширение по высоте при противоположном движении
-                    const prevIdx = vFractions.indexOf(currentState.heightFraction);
-                    if (prevIdx > 0) {
-                        nextState.heightFraction = vFractions[prevIdx - 1];
-                    }
-                    else {
-                        // Было 1/2 -> перекидываем вниз
-                        nextState.verticalAlign = 'bottom';
-                        nextState.heightFraction = vFractions[0];
-                    }
+                    break;
+                case 'down':
+                    nextState.vIndex = Math.min(6, currentState.vIndex + 1);
                     nextState.lastDirection = 'down';
-                }
-                else {
-                    // Первый клик вниз
-                    nextState.verticalAlign = 'bottom';
-                    nextState.heightFraction = vFractions[0];
-                    nextState.lastDirection = 'down';
-                }
-                break;
+                    break;
+                case 'shift-left':
+                    nextState.hIndex = 2; // Мгновенный сдвиг влево
+                    nextState.lastDirection = 'shift-left';
+                    break;
+                case 'shift-right':
+                    nextState.hIndex = 8; // Мгновенный сдвиг вправо
+                    nextState.lastDirection = 'shift-right';
+                    break;
+            }
         }
         return nextState;
     }
@@ -151,26 +105,18 @@ class TilingEngine {
     static stateToGeometry(state, screen, config) {
         const { workarea } = screen;
         const gaps = config.gaps || 0;
-        // Вычисляем целевую ширину и высоту окна
-        let width = Math.round(workarea.width / state.widthFraction);
-        let height = Math.round(workarea.height / state.heightFraction);
-        // Вычисляем X координату
-        let x = workarea.x;
-        if (state.horizontalAlign === 'right') {
-            x = workarea.x + workarea.width - width;
-        }
-        else if (state.horizontalAlign === 'center') {
-            x = workarea.x + Math.round((workarea.width - width) / 2);
-        }
-        // Вычисляем Y координату
-        let y = workarea.y;
-        if (state.verticalAlign === 'bottom') {
-            y = workarea.y + workarea.height - height;
-        }
-        else if (state.verticalAlign === 'center') {
-            y = workarea.y + Math.round((workarea.height - height) / 2);
-        }
-        // Накладываем умные отступы (gaps), если они настроены
+        const hSpan = exports.HORIZONTAL_SPANS[state.hIndex] !== undefined ? exports.HORIZONTAL_SPANS[state.hIndex] : exports.HORIZONTAL_SPANS[5];
+        const vSpan = exports.VERTICAL_SPANS[state.vIndex] !== undefined ? exports.VERTICAL_SPANS[state.vIndex] : exports.VERTICAL_SPANS[3];
+        const colWidth = workarea.width / 12;
+        const rowHeight = workarea.height / 12;
+        const xStart = workarea.x + Math.round(hSpan[0] * colWidth);
+        const xEnd = workarea.x + Math.round(hSpan[1] * colWidth);
+        let width = xEnd - xStart;
+        let x = xStart;
+        const yStart = workarea.y + Math.round(vSpan[0] * rowHeight);
+        const yEnd = workarea.y + Math.round(vSpan[1] * rowHeight);
+        let height = yEnd - yStart;
+        let y = yStart;
         if (gaps > 0) {
             x += gaps;
             y += gaps;
@@ -178,16 +124,6 @@ class TilingEngine {
             height -= 2 * gaps;
         }
         return { x, y, width, height };
-    }
-    /**
-     * Циклический переход долей на основе массива из конфигурации
-     */
-    static cycleFraction(current, fractions) {
-        const idx = fractions.indexOf(current);
-        if (idx === -1 || idx === fractions.length - 1) {
-            return fractions[0]; // Возвращаем первую долю (например, 2)
-        }
-        return fractions[idx + 1];
     }
 }
 exports.TilingEngine = TilingEngine;

@@ -12,12 +12,10 @@ export interface ScreenInfo {
     y: number;
     workarea: Geometry;
 }
-export type Direction = 'left' | 'right' | 'up' | 'down';
+export type Direction = 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right';
 export interface WindowState {
-    widthFraction: number;
-    heightFraction: number;
-    horizontalAlign: 'left' | 'right' | 'center' | null;
-    verticalAlign: 'top' | 'bottom' | 'center' | null;
+    hIndex: number;
+    vIndex: number;
     lastDirection: Direction | null;
 }
 export interface CachedWindowState {
