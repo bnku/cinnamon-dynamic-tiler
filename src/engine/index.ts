@@ -1,27 +1,31 @@
 import { Geometry, ScreenInfo, Direction, WindowState, Config } from './types';
 
 export const HORIZONTAL_SPANS: [number, number][] = [
-  [0, 3],   // 0
+  [0, 2],   // 0
   [0, 4],   // 1
   [0, 6],   // 2 (left 1/2)
   [0, 8],   // 3
-  [0, 9],   // 4
+  [0, 10],  // 4
   [0, 12],  // 5 (full width)
-  [3, 12],  // 6
+  [2, 12],  // 6
   [4, 12],  // 7
   [6, 12],  // 8 (right 1/2)
   [8, 12],  // 9
-  [9, 12],  // 10
+  [10, 12], // 10
 ];
 
 export const VERTICAL_SPANS: [number, number][] = [
-  [0, 3],   // 0
+  [0, 2],   // 0
   [0, 4],   // 1
   [0, 6],   // 2 (top 1/2)
-  [0, 12],  // 3 (full height)
-  [6, 12],  // 4 (bottom 1/2)
-  [8, 12],  // 5
-  [9, 12],  // 6
+  [0, 8],   // 3
+  [0, 10],  // 4
+  [0, 12],  // 5 (full height)
+  [2, 12],  // 6
+  [4, 12],  // 7
+  [6, 12],  // 8 (bottom 1/2)
+  [8, 12],  // 9
+  [10, 12], // 10
 ];
 
 export class TilingEngine {
@@ -31,7 +35,7 @@ export class TilingEngine {
   public static getDefaultState(): WindowState {
     return {
       hIndex: 5, // [0, 12] (полная ширина)
-      vIndex: 3, // [0, 12] (полная высота)
+      vIndex: 5, // [0, 12] (полная высота)
       hSpan: [0, 12],
       vSpan: [0, 12],
       lastDirection: null,
@@ -207,12 +211,8 @@ export class TilingEngine {
       nextState.hSpan = HORIZONTAL_SPANS[nextState.hIndex] || HORIZONTAL_SPANS[5];
     }
     if (!nextState.vSpan) {
-      nextState.vSpan = VERTICAL_SPANS[nextState.vIndex] || VERTICAL_SPANS[3];
+      nextState.vSpan = VERTICAL_SPANS[nextState.vIndex] || VERTICAL_SPANS[5];
     }
-
-    // Проверяем, являются ли текущие спаны кастомными (отсутствуют в статической сетке)
-    const isCustomHSpan = !HORIZONTAL_SPANS.some(s => s[0] === nextState.hSpan[0] && s[1] === nextState.hSpan[1]);
-    const isCustomVSpan = !VERTICAL_SPANS.some(s => s[0] === nextState.vSpan[0] && s[1] === nextState.vSpan[1]);
 
     if (currentState.lastDirection === null) {
       // Первый тайлинг окна
@@ -221,7 +221,7 @@ export class TilingEngine {
           nextState.hSpan = this.getInitialHSpan('left', siblingSpans);
           nextState.vSpan = [0, 12];
           nextState.hIndex = this.spanToHIndex(nextState.hSpan);
-          nextState.vIndex = 3;
+          nextState.vIndex = 5;
           nextState.lastDirection = nextState.hSpan[0] > 0 ? 'right' : 'left';
           break;
 
@@ -229,7 +229,7 @@ export class TilingEngine {
           nextState.hSpan = this.getInitialHSpan('right', siblingSpans);
           nextState.vSpan = [0, 12];
           nextState.hIndex = this.spanToHIndex(nextState.hSpan);
-          nextState.vIndex = 3;
+          nextState.vIndex = 5;
           nextState.lastDirection = nextState.hSpan[1] < 12 ? 'left' : 'right';
           break;
 
@@ -253,7 +253,7 @@ export class TilingEngine {
           nextState.hSpan = [0, 6];
           nextState.vSpan = [0, 12];
           nextState.hIndex = 2;
-          nextState.vIndex = 3;
+          nextState.vIndex = 5;
           nextState.lastDirection = 'shift-left';
           break;
 
@@ -261,216 +261,128 @@ export class TilingEngine {
           nextState.hSpan = [6, 12];
           nextState.vSpan = [0, 12];
           nextState.hIndex = 8;
-          nextState.vIndex = 3;
+          nextState.vIndex = 5;
           nextState.lastDirection = 'shift-right';
           break;
       }
     } else {
       // Окно уже в режиме тайлинга
       switch (direction) {
-        case 'left':
-          if (isCustomHSpan) {
-            const [start, end] = nextState.hSpan;
-            let newStart = start;
-            let newEnd = end;
-            if (start > 0) {
-              newStart = Math.max(0, start - 3);
-            } else {
-              newEnd = Math.max(3, end - 3);
-            }
-            const targetSpan: [number, number] = [newStart, newEnd];
+        case 'left': {
+          const [start, end] = nextState.hSpan;
+          let newStart = start;
+          let newEnd = end;
 
-            const leftCollision = targetSpan[0] < currentState.hSpan[0] && this.isLeftChainBlocked(currentState.hSpan[0], siblingSpans);
-
-            if (leftCollision) {
-              const currentStart = currentState.hSpan[0];
-              const currentEnd = currentState.hSpan[1];
-              const currentWidth = currentEnd - currentStart;
-              let nextWidth = currentWidth > 6 ? 6 : 3;
-              if (currentWidth <= 3) nextWidth = 3;
-              nextState.hSpan = [currentStart, currentStart + nextWidth];
-            } else {
-              nextState.hSpan = targetSpan;
-            }
-            nextState.hIndex = this.spanToHIndex(nextState.hSpan);
-            nextState.lastDirection = 'left';
+          if (start > 0) {
+            newStart = Math.max(0, start - 2);
           } else {
-            const nextHIndex = Math.max(0, currentState.hIndex - 1);
-            const nextHSpan = HORIZONTAL_SPANS[nextHIndex];
-
-            const leftCollision = nextHSpan[0] < currentState.hSpan[0] && this.isLeftChainBlocked(currentState.hSpan[0], siblingSpans);
-
-            if (leftCollision) {
-              const currentStart = currentState.hSpan[0];
-              const currentEnd = currentState.hSpan[1];
-              const currentWidth = currentEnd - currentStart;
-              let nextWidth = currentWidth > 6 ? 6 : 3;
-              if (currentWidth <= 3) nextWidth = 3;
-
-              nextState.hSpan = [currentStart, currentStart + nextWidth];
-              nextState.hIndex = this.spanToHIndex(nextState.hSpan);
-              nextState.lastDirection = 'left';
-            } else {
-              nextState.hIndex = nextHIndex;
-              nextState.hSpan = nextHSpan;
-              nextState.lastDirection = 'left';
-            }
+            newEnd = Math.max(2, end - 2);
           }
-          break;
+          const targetSpan: [number, number] = [newStart, newEnd];
+          const leftCollision = targetSpan[0] < currentState.hSpan[0] && this.isLeftChainBlocked(currentState.hSpan[0], siblingSpans);
 
-        case 'right':
-          if (isCustomHSpan) {
-            const [start, end] = nextState.hSpan;
-            let newStart = start;
-            let newEnd = end;
-            if (end < 12) {
-              newEnd = Math.min(12, end + 3);
-            } else {
-              newStart = Math.min(9, start + 3);
-            }
-            const targetSpan: [number, number] = [newStart, newEnd];
-
-            const rightCollision = targetSpan[1] > currentState.hSpan[1] && this.isRightChainBlocked(currentState.hSpan[1], siblingSpans);
-
-            if (rightCollision) {
-              const currentStart = currentState.hSpan[0];
-              const currentEnd = currentState.hSpan[1];
-              const currentWidth = currentEnd - currentStart;
-              let nextWidth = currentWidth > 6 ? 6 : 3;
-              if (currentWidth <= 3) nextWidth = 3;
-              nextState.hSpan = [currentEnd - nextWidth, currentEnd];
-            } else {
-              nextState.hSpan = targetSpan;
-            }
-            nextState.hIndex = this.spanToHIndex(nextState.hSpan);
-            nextState.lastDirection = 'right';
+          if (leftCollision) {
+            const currentStart = currentState.hSpan[0];
+            const currentEnd = currentState.hSpan[1];
+            const currentWidth = currentEnd - currentStart;
+            let nextWidth = currentWidth > 6 ? 6 : 2;
+            if (currentWidth <= 2) nextWidth = 2;
+            nextState.hSpan = [currentStart, currentStart + nextWidth];
           } else {
-            const nextHIndexRight = Math.min(10, currentState.hIndex + 1);
-            const nextHSpanRight = HORIZONTAL_SPANS[nextHIndexRight];
-
-            const rightCollision = nextHSpanRight[1] > currentState.hSpan[1] && this.isRightChainBlocked(currentState.hSpan[1], siblingSpans);
-
-            if (rightCollision) {
-              const currentStart = currentState.hSpan[0];
-              const currentEnd = currentState.hSpan[1];
-              const currentWidth = currentEnd - currentStart;
-              let nextWidth = currentWidth > 6 ? 6 : 3;
-              if (currentWidth <= 3) nextWidth = 3;
-
-              nextState.hSpan = [currentEnd - nextWidth, currentEnd];
-              nextState.hIndex = this.spanToHIndex(nextState.hSpan);
-              nextState.lastDirection = 'right';
-            } else {
-              nextState.hIndex = nextHIndexRight;
-              nextState.hSpan = nextHSpanRight;
-              nextState.lastDirection = 'right';
-            }
+            nextState.hSpan = targetSpan;
           }
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
+          nextState.lastDirection = 'left';
           break;
+        }
 
-        case 'up':
-          if (isCustomVSpan) {
-            const [start, end] = nextState.vSpan;
-            let newStart = start;
-            let newEnd = end;
-            if (start > 0) {
-              newStart = Math.max(0, start - 3);
-            } else {
-              newEnd = Math.max(3, end - 3);
-            }
-            const targetSpan: [number, number] = [newStart, newEnd];
+        case 'right': {
+          const [start, end] = nextState.hSpan;
+          let newStart = start;
+          let newEnd = end;
 
-            const topCollision = targetSpan[0] < currentState.vSpan[0] && this.isTopChainBlocked(currentState.vSpan[0], siblingSpans);
-
-            if (topCollision) {
-              const currentStart = currentState.vSpan[0];
-              const currentEnd = currentState.vSpan[1];
-              const currentHeight = currentEnd - currentStart;
-              let nextHeight = currentHeight > 6 ? 6 : 3;
-              if (currentHeight <= 3) nextHeight = 3;
-              nextState.vSpan = [currentStart, currentStart + nextHeight];
-            } else {
-              nextState.vSpan = targetSpan;
-            }
-            nextState.vIndex = this.spanToVIndex(nextState.vSpan);
-            nextState.lastDirection = 'up';
+          if (end < 12) {
+            newEnd = Math.min(12, end + 2);
           } else {
-            const nextVIndexUp = Math.max(0, currentState.vIndex - 1);
-            const nextVSpanUp = VERTICAL_SPANS[nextVIndexUp];
-
-            const topCollision = nextVSpanUp[0] < currentState.vSpan[0] && this.isTopChainBlocked(currentState.vSpan[0], siblingSpans);
-
-            if (topCollision) {
-              const currentStart = currentState.vSpan[0];
-              const currentEnd = currentState.vSpan[1];
-              const currentHeight = currentEnd - currentStart;
-              let nextHeight = currentHeight > 6 ? 6 : 3;
-              if (currentHeight <= 3) nextHeight = 3;
-
-              nextState.vSpan = [currentStart, currentStart + nextHeight];
-              nextState.vIndex = this.spanToVIndex(nextState.vSpan);
-              nextState.lastDirection = 'up';
-            } else {
-              nextState.vIndex = nextVIndexUp;
-              nextState.vSpan = nextVSpanUp;
-              nextState.lastDirection = 'up';
-            }
+            newStart = Math.min(10, start + 2);
           }
-          break;
+          const targetSpan: [number, number] = [newStart, newEnd];
+          const rightCollision = targetSpan[1] > currentState.hSpan[1] && this.isRightChainBlocked(currentState.hSpan[1], siblingSpans);
 
-        case 'down':
-          if (isCustomVSpan) {
-            const [start, end] = nextState.vSpan;
-            let newStart = start;
-            let newEnd = end;
-            if (end < 12) {
-              newEnd = Math.min(12, end + 3);
-            } else {
-              newStart = Math.min(9, start + 3);
-            }
-            const targetSpan: [number, number] = [newStart, newEnd];
-
-            const bottomCollision = targetSpan[1] > currentState.vSpan[1] && this.isBottomChainBlocked(currentState.vSpan[1], siblingSpans);
-
-            if (bottomCollision) {
-              const currentStart = currentState.vSpan[0];
-              const currentEnd = currentState.vSpan[1];
-              const currentHeight = currentEnd - currentStart;
-              let nextHeight = currentHeight > 6 ? 6 : 3;
-              if (currentHeight <= 3) nextHeight = 3;
-              nextState.vSpan = [currentEnd - nextHeight, currentEnd];
-            } else {
-              nextState.vSpan = targetSpan;
-            }
-            nextState.vIndex = this.spanToVIndex(nextState.vSpan);
-            nextState.lastDirection = 'down';
+          if (rightCollision) {
+            const currentStart = currentState.hSpan[0];
+            const currentEnd = currentState.hSpan[1];
+            const currentWidth = currentEnd - currentStart;
+            let nextWidth = currentWidth > 6 ? 6 : 2;
+            if (currentWidth <= 2) nextWidth = 2;
+            nextState.hSpan = [currentEnd - nextWidth, currentEnd];
           } else {
-            const nextVIndexDown = Math.min(6, currentState.vIndex + 1);
-            const nextVSpanDown = VERTICAL_SPANS[nextVIndexDown];
-
-            const bottomCollision = nextVSpanDown[1] > currentState.vSpan[1] && this.isBottomChainBlocked(currentState.vSpan[1], siblingSpans);
-
-            if (bottomCollision) {
-              const currentStart = currentState.vSpan[0];
-              const currentEnd = currentState.vSpan[1];
-              const currentHeight = currentEnd - currentStart;
-              let nextHeight = currentHeight > 6 ? 6 : 3;
-              if (currentHeight <= 3) nextHeight = 3;
-
-              nextState.vSpan = [currentEnd - nextHeight, currentEnd];
-              nextState.vIndex = this.spanToVIndex(nextState.vSpan);
-              nextState.lastDirection = 'down';
-            } else {
-              nextState.vIndex = nextVIndexDown;
-              nextState.vSpan = nextVSpanDown;
-              nextState.lastDirection = 'down';
-            }
+            nextState.hSpan = targetSpan;
           }
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
+          nextState.lastDirection = 'right';
           break;
+        }
+
+        case 'up': {
+          const [start, end] = nextState.vSpan;
+          let newStart = start;
+          let newEnd = end;
+
+          if (start > 0) {
+            newStart = Math.max(0, start - 2);
+          } else {
+            newEnd = Math.max(2, end - 2);
+          }
+          const targetSpan: [number, number] = [newStart, newEnd];
+          const topCollision = targetSpan[0] < currentState.vSpan[0] && this.isTopChainBlocked(currentState.vSpan[0], siblingSpans);
+
+          if (topCollision) {
+            const currentStart = currentState.vSpan[0];
+            const currentEnd = currentState.vSpan[1];
+            const currentHeight = currentEnd - currentStart;
+            let nextHeight = currentHeight > 6 ? 6 : 2;
+            if (currentHeight <= 2) nextHeight = 2;
+            nextState.vSpan = [currentStart, currentStart + nextHeight];
+          } else {
+            nextState.vSpan = targetSpan;
+          }
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
+          nextState.lastDirection = 'up';
+          break;
+        }
+
+        case 'down': {
+          const [start, end] = nextState.vSpan;
+          let newStart = start;
+          let newEnd = end;
+
+          if (end < 12) {
+            newEnd = Math.min(12, end + 2);
+          } else {
+            newStart = Math.min(10, start + 2);
+          }
+          const targetSpan: [number, number] = [newStart, newEnd];
+          const bottomCollision = targetSpan[1] > currentState.vSpan[1] && this.isBottomChainBlocked(currentState.vSpan[1], siblingSpans);
+
+          if (bottomCollision) {
+            const currentStart = currentState.vSpan[0];
+            const currentEnd = currentState.vSpan[1];
+            const currentHeight = currentEnd - currentStart;
+            let nextHeight = currentHeight > 6 ? 6 : 2;
+            if (currentHeight <= 2) nextHeight = 2;
+            nextState.vSpan = [currentEnd - nextHeight, currentEnd];
+          } else {
+            nextState.vSpan = targetSpan;
+          }
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
+          nextState.lastDirection = 'down';
+          break;
+        }
 
         case 'shift-left':
           nextState.hSpan = [0, 6];
-          nextState.hIndex = 2;
+          nextState.hIndex = 1;
           nextState.lastDirection = 'shift-left';
           break;
 
@@ -547,7 +459,7 @@ export class TilingEngine {
         state.hSpan = HORIZONTAL_SPANS[state.hIndex] || HORIZONTAL_SPANS[5];
       }
       if (!state.vSpan) {
-        state.vSpan = VERTICAL_SPANS[state.vIndex] || VERTICAL_SPANS[3];
+        state.vSpan = VERTICAL_SPANS[state.vIndex] || VERTICAL_SPANS[5];
       }
       return { windowId: w.windowId, state };
     });
@@ -567,7 +479,7 @@ export class TilingEngine {
         return w.windowId === activeId ? [...nextActiveState.hSpan] : [...w.state.hSpan];
       });
 
-      const MIN_WIDTH = 3;
+      const MIN_WIDTH = 2;
 
       // Распространяем вправо
       for (let i = k + 1; i < N; i++) {
@@ -577,7 +489,29 @@ export class TilingEngine {
         const wasTouching = Math.abs(currOriginalStart - prevOriginalEnd) === 0;
 
         if (wasTouching) {
+          const origStart = sortedWins[i].state.hSpan[0];
+          const origEnd = sortedWins[i].state.hSpan[1];
           newSpans[i][0] = newSpans[i - 1][1];
+          const shift = newSpans[i][0] - origStart;
+
+          if (shift > 0) {
+            let R = i;
+            while (R + 1 < N) {
+              const nextStart = sortedWins[R + 1].state.hSpan[0];
+              const currEnd = sortedWins[R].state.hSpan[1];
+              if (Math.abs(nextStart - currEnd) === 0) {
+                R++;
+              } else {
+                break;
+              }
+            }
+            const chainEnd = sortedWins[R].state.hSpan[1];
+            const limitRight = (R + 1 < N) ? sortedWins[R + 1].state.hSpan[0] : 12;
+            const freeSpaceRight = limitRight - chainEnd;
+            const allowedShift = Math.min(shift, freeSpaceRight);
+            newSpans[i][1] = origEnd + allowedShift;
+          }
+
           const width = newSpans[i][1] - newSpans[i][0];
 
           if (width < MIN_WIDTH) {
@@ -585,7 +519,7 @@ export class TilingEngine {
 
             if (newSpans[i][1] > 12) {
               newSpans[i][1] = 12;
-              newSpans[i][0] = 9; // наложение
+              newSpans[i][0] = 10; // наложение
             }
           }
         }
@@ -599,7 +533,29 @@ export class TilingEngine {
         const wasTouching = Math.abs(nextOriginalStart - currOriginalEnd) === 0;
 
         if (wasTouching) {
+          const origStart = sortedWins[i].state.hSpan[0];
+          const origEnd = sortedWins[i].state.hSpan[1];
           newSpans[i][1] = newSpans[i + 1][0];
+          const shift = origEnd - newSpans[i][1];
+
+          if (shift > 0) {
+            let L = i;
+            while (L - 1 >= 0) {
+              const prevEnd = sortedWins[L - 1].state.hSpan[1];
+              const currStart = sortedWins[L].state.hSpan[0];
+              if (Math.abs(currStart - prevEnd) === 0) {
+                L--;
+              } else {
+                break;
+              }
+            }
+            const chainStart = sortedWins[L].state.hSpan[0];
+            const limitLeft = (L - 1 >= 0) ? sortedWins[L - 1].state.hSpan[1] : 0;
+            const freeSpaceLeft = chainStart - limitLeft;
+            const allowedShift = Math.min(shift, freeSpaceLeft);
+            newSpans[i][0] = origStart - allowedShift;
+          }
+
           const width = newSpans[i][1] - newSpans[i][0];
 
           if (width < MIN_WIDTH) {
@@ -607,7 +563,7 @@ export class TilingEngine {
 
             if (newSpans[i][0] < 0) {
               newSpans[i][0] = 0;
-              newSpans[i][1] = 3; // наложение
+              newSpans[i][1] = 2; // наложение
             }
           }
         }
@@ -646,7 +602,7 @@ export class TilingEngine {
         return w.windowId === activeId ? [...nextActiveState.vSpan] : [...w.state.vSpan];
       });
 
-      const MIN_HEIGHT = 3;
+      const MIN_HEIGHT = 2;
 
       // Распространяем вниз
       for (let i = k + 1; i < N; i++) {
@@ -656,7 +612,29 @@ export class TilingEngine {
         const wasTouching = Math.abs(currOriginalStart - prevOriginalEnd) === 0;
 
         if (wasTouching) {
+          const origStart = sortedWins[i].state.vSpan[0];
+          const origEnd = sortedWins[i].state.vSpan[1];
           newSpans[i][0] = newSpans[i - 1][1];
+          const shift = newSpans[i][0] - origStart;
+
+          if (shift > 0) {
+            let R = i;
+            while (R + 1 < N) {
+              const nextStart = sortedWins[R + 1].state.vSpan[0];
+              const currEnd = sortedWins[R].state.vSpan[1];
+              if (Math.abs(nextStart - currEnd) === 0) {
+                R++;
+              } else {
+                break;
+              }
+            }
+            const chainEnd = sortedWins[R].state.vSpan[1];
+            const limitBottom = (R + 1 < N) ? sortedWins[R + 1].state.vSpan[0] : 12;
+            const freeSpaceBottom = limitBottom - chainEnd;
+            const allowedShift = Math.min(shift, freeSpaceBottom);
+            newSpans[i][1] = origEnd + allowedShift;
+          }
+
           const height = newSpans[i][1] - newSpans[i][0];
 
           if (height < MIN_HEIGHT) {
@@ -664,7 +642,7 @@ export class TilingEngine {
 
             if (newSpans[i][1] > 12) {
               newSpans[i][1] = 12;
-              newSpans[i][0] = 9; // наложение
+              newSpans[i][0] = 10; // наложение
             }
           }
         }
@@ -678,7 +656,29 @@ export class TilingEngine {
         const wasTouching = Math.abs(nextOriginalStart - currOriginalEnd) === 0;
 
         if (wasTouching) {
+          const origStart = sortedWins[i].state.vSpan[0];
+          const origEnd = sortedWins[i].state.vSpan[1];
           newSpans[i][1] = newSpans[i + 1][0];
+          const shift = origEnd - newSpans[i][1];
+
+          if (shift > 0) {
+            let L = i;
+            while (L - 1 >= 0) {
+              const prevEnd = sortedWins[L - 1].state.vSpan[1];
+              const currStart = sortedWins[L].state.vSpan[0];
+              if (Math.abs(currStart - prevEnd) === 0) {
+                L--;
+              } else {
+                break;
+              }
+            }
+            const chainStart = sortedWins[L].state.vSpan[0];
+            const limitTop = (L - 1 >= 0) ? sortedWins[L - 1].state.vSpan[1] : 0;
+            const freeSpaceTop = chainStart - limitTop;
+            const allowedShift = Math.min(shift, freeSpaceTop);
+            newSpans[i][0] = origStart - allowedShift;
+          }
+
           const height = newSpans[i][1] - newSpans[i][0];
 
           if (height < MIN_HEIGHT) {
@@ -686,7 +686,7 @@ export class TilingEngine {
 
             if (newSpans[i][0] < 0) {
               newSpans[i][0] = 0;
-              newSpans[i][1] = 3; // наложение
+              newSpans[i][1] = 2; // наложение
             }
           }
         }
@@ -843,7 +843,7 @@ export class TilingEngine {
     if (chainLength === 0) return false;
 
     const freeSpace = currentStart;
-    const minChainWidth = chainLength * 3;
+    const minChainWidth = chainLength * 2;
     const compressionReserve = currentChainWidth - minChainWidth;
     const movementReserve = freeSpace + compressionReserve;
 
@@ -871,7 +871,7 @@ export class TilingEngine {
     if (chainLength === 0) return false;
 
     const freeSpace = 12 - currentEnd;
-    const minChainWidth = chainLength * 3;
+    const minChainWidth = chainLength * 2;
     const compressionReserve = currentChainWidth - minChainWidth;
     const movementReserve = freeSpace + compressionReserve;
 
@@ -899,7 +899,7 @@ export class TilingEngine {
     if (chainLength === 0) return false;
 
     const freeSpace = currentStart;
-    const minChainHeight = chainLength * 3;
+    const minChainHeight = chainLength * 2;
     const compressionReserve = currentChainHeight - minChainHeight;
     const movementReserve = freeSpace + compressionReserve;
 
@@ -927,7 +927,7 @@ export class TilingEngine {
     if (chainLength === 0) return false;
 
     const freeSpace = 12 - currentEnd;
-    const minChainHeight = chainLength * 3;
+    const minChainHeight = chainLength * 2;
     const compressionReserve = currentChainHeight - minChainHeight;
     const movementReserve = freeSpace + compressionReserve;
 
