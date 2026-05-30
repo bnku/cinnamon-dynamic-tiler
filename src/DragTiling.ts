@@ -488,69 +488,93 @@ export function collapseVacancy(
     return Math.max(spanA[0], spanB[0]) < Math.min(spanA[1], spanB[1]);
   };
 
-  let collapsedHorizontally = false;
+  const overlapSize = (spanA: [number, number], spanB: [number, number]) => {
+    return Math.max(0, Math.min(spanA[1], spanB[1]) - Math.max(spanA[0], spanB[0]));
+  };
 
-  // 1. Expand horizontal neighbors into vacancy (preferring horizontal collapse)
-  let leftNeighborId: string | null = null;
+  const covers = (container: [number, number], inner: [number, number]) => {
+    return container[0] <= inner[0] && container[1] >= inner[1];
+  };
+
+  const wouldOverlap = (id: string, hSpan: [number, number], vSpan: [number, number]) => {
+    for (const other of otherWindows) {
+      if (other.windowId === id) continue;
+      const s = states[other.windowId];
+      if (hasHorizontalOverlap(hSpan, s.hSpan) && hasVerticalOverlap(vSpan, s.vSpan)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const applyCandidate = (id: string, hSpan: [number, number], vSpan: [number, number]) => {
+    const s = states[id];
+    s.hSpan = hSpan;
+    s.vSpan = vSpan;
+    s.hIndex = TilingEngine.spanToHIndex(hSpan);
+    s.vIndex = TilingEngine.spanToVIndex(vSpan);
+  };
+
+  const candidates: {
+    id: string;
+    priority: number;
+    fullHSpan: [number, number];
+    fullVSpan: [number, number];
+    partialHSpan?: [number, number];
+    partialVSpan?: [number, number];
+  }[] = [];
+
   for (const w of otherWindows) {
     const s = states[w.windowId];
     if (hasVerticalOverlap(vacantVSpan, s.vSpan) && Math.abs(s.hSpan[1] - vacantHSpan[0]) <= 1) {
-      leftNeighborId = w.windowId;
-      break;
+      candidates.push({
+        id: w.windowId,
+        priority: 100 + overlapSize(vacantVSpan, s.vSpan),
+        fullHSpan: [s.hSpan[0], vacantHSpan[1]],
+        fullVSpan: s.vSpan,
+        partialHSpan: covers(s.vSpan, vacantVSpan) ? [s.hSpan[0], vacantHSpan[1]] : undefined,
+        partialVSpan: covers(s.vSpan, vacantVSpan) ? [...vacantVSpan] : undefined
+      });
+    }
+    if (hasVerticalOverlap(vacantVSpan, s.vSpan) && Math.abs(s.hSpan[0] - vacantHSpan[1]) <= 1) {
+      candidates.push({
+        id: w.windowId,
+        priority: 100 + overlapSize(vacantVSpan, s.vSpan),
+        fullHSpan: [vacantHSpan[0], s.hSpan[1]],
+        fullVSpan: s.vSpan,
+        partialHSpan: covers(s.vSpan, vacantVSpan) ? [vacantHSpan[0], s.hSpan[1]] : undefined,
+        partialVSpan: covers(s.vSpan, vacantVSpan) ? [...vacantVSpan] : undefined
+      });
+    }
+    if (hasHorizontalOverlap(vacantHSpan, s.hSpan) && Math.abs(s.vSpan[1] - vacantVSpan[0]) <= 1) {
+      candidates.push({
+        id: w.windowId,
+        priority: overlapSize(vacantHSpan, s.hSpan),
+        fullHSpan: s.hSpan,
+        fullVSpan: [s.vSpan[0], vacantVSpan[1]]
+      });
+    }
+    if (hasHorizontalOverlap(vacantHSpan, s.hSpan) && Math.abs(s.vSpan[0] - vacantVSpan[1]) <= 1) {
+      candidates.push({
+        id: w.windowId,
+        priority: overlapSize(vacantHSpan, s.hSpan),
+        fullHSpan: s.hSpan,
+        fullVSpan: [vacantVSpan[0], s.vSpan[1]]
+      });
     }
   }
 
-  if (leftNeighborId) {
-    const s = states[leftNeighborId];
-    s.hSpan[1] = vacantHSpan[1];
-    s.hIndex = TilingEngine.spanToHIndex(s.hSpan);
-    collapsedHorizontally = true;
-  } else {
-    let rightNeighborId: string | null = null;
-    for (const w of otherWindows) {
-      const s = states[w.windowId];
-      if (hasVerticalOverlap(vacantVSpan, s.vSpan) && Math.abs(s.hSpan[0] - vacantHSpan[1]) <= 1) {
-        rightNeighborId = w.windowId;
-        break;
-      }
-    }
-    if (rightNeighborId) {
-      const s = states[rightNeighborId];
-      s.hSpan[0] = vacantHSpan[0];
-      s.hIndex = TilingEngine.spanToHIndex(s.hSpan);
-      collapsedHorizontally = true;
-    }
-  }
+  candidates.sort((a, b) => b.priority - a.priority);
 
-  // 2. Expand vertical neighbors into vacancy if horizontal was not applicable
-  if (!collapsedHorizontally) {
-    let topNeighborId: string | null = null;
-    for (const w of otherWindows) {
-      const s = states[w.windowId];
-      if (hasHorizontalOverlap(vacantHSpan, s.hSpan) && Math.abs(s.vSpan[1] - vacantVSpan[0]) <= 1) {
-        topNeighborId = w.windowId;
-        break;
-      }
+  for (const candidate of candidates) {
+    if (!wouldOverlap(candidate.id, candidate.fullHSpan, candidate.fullVSpan)) {
+      applyCandidate(candidate.id, candidate.fullHSpan, candidate.fullVSpan);
+      return states;
     }
-
-    if (topNeighborId) {
-      const s = states[topNeighborId];
-      s.vSpan[1] = vacantVSpan[1];
-      s.vIndex = TilingEngine.spanToVIndex(s.vSpan);
-    } else {
-      let bottomNeighborId: string | null = null;
-      for (const w of otherWindows) {
-        const s = states[w.windowId];
-        if (hasHorizontalOverlap(vacantHSpan, s.hSpan) && Math.abs(s.vSpan[0] - vacantVSpan[1]) <= 1) {
-          bottomNeighborId = w.windowId;
-          break;
-        }
-      }
-      if (bottomNeighborId) {
-        const s = states[bottomNeighborId];
-        s.vSpan[0] = vacantVSpan[0];
-        s.vIndex = TilingEngine.spanToVIndex(s.vSpan);
-      }
+    if (candidate.partialHSpan && candidate.partialVSpan &&
+        !wouldOverlap(candidate.id, candidate.partialHSpan, candidate.partialVSpan)) {
+      applyCandidate(candidate.id, candidate.partialHSpan, candidate.partialVSpan);
+      return states;
     }
   }
 

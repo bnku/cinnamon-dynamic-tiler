@@ -1,5 +1,5 @@
 import { TilingEngine } from '../src/core/TilingEngine';
-import { calculateDragTransitions } from '../src/DragTiling';
+import { calculateDragTransitions, collapseVacancy } from '../src/DragTiling';
 import { ScreenInfo, WindowState, Config } from '../src/core/types';
 
 describe('TilingEngine - 12-Column Layout Calculations', () => {
@@ -842,5 +842,74 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(result['chrome'].vSpan).toEqual([0, 12]);
     expect(result['chat'].hSpan).toEqual([8, 12]);
     expect(result['chat'].vSpan).toEqual([6, 12]);
+  });
+
+  test('DnD vacancy collapse should expand the squeezed Chrome into the freed top-right slot without touching bottom-right chat', () => {
+    const activeWindows = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 3, vIndex: 5, hSpan: [4, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chat',
+        state: { hIndex: 9, vIndex: 8, hSpan: [8, 12] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'dragged-terminal',
+        state: { hIndex: 8, vIndex: 2, hSpan: [8, 12] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = collapseVacancy('dragged-terminal', fakeConfig, activeWindows);
+
+    expect(result['chrome'].hSpan).toEqual([4, 12]);
+    expect(result['chrome'].vSpan).toEqual([0, 6]);
+    expect(result['chat'].hSpan).toEqual([8, 12]);
+    expect(result['chat'].vSpan).toEqual([6, 12]);
+  });
+
+  test('DnD should insert a window between two vertically stacked windows', () => {
+    const activeWindows = [
+      {
+        windowId: 'top',
+        state: { hIndex: 5, vIndex: 2, hSpan: [0, 12] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'bottom',
+        state: { hIndex: 5, vIndex: 8, hSpan: [0, 12] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'dragged-terminal',
+      [0, 12],
+      [4, 8],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['top'].vSpan).toEqual([0, 4]);
+    expect(result['dragged-terminal'].vSpan).toEqual([4, 8]);
+    expect(result['bottom'].vSpan).toEqual([8, 12]);
+  });
+
+  test('DnD should insert a window between the top screen edge and an existing full-height window', () => {
+    const activeWindows = [
+      {
+        windowId: 'existing',
+        state: { hIndex: 5, vIndex: 5, hSpan: [0, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'dragged-terminal',
+      [0, 12],
+      [0, 6],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['dragged-terminal'].vSpan).toEqual([0, 6]);
+    expect(result['existing'].vSpan).toEqual([6, 12]);
   });
 });

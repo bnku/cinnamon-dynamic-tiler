@@ -427,6 +427,7 @@ class DynamicTilerExtension {
             const config = this.configProvider.getConfig();
             const { workarea } = activeMonitor;
             const colWidth = workarea.width / config.gridSize;
+            const rowHeight = workarea.height / config.gridSize;
             // Determine the target sizes based on cache or physical size
             let windowWidth = Math.round(config.gridSize / 2);
             let windowHeight = config.gridSize;
@@ -507,6 +508,50 @@ class DynamicTilerExtension {
                         windowId: id,
                         state: state
                     });
+                }
+            }
+            const hasHorizontalOverlap = (spanA, spanB) => {
+                return Math.max(spanA[0], spanB[0]) < Math.min(spanA[1], spanB[1]);
+            };
+            const stackWindows = activeWindowsOnMonitor
+                .filter(w => w.windowId !== this.draggedWindowId && hasHorizontalOverlap(targetHSpan, w.state.hSpan))
+                .sort((a, b) => a.state.vSpan[0] - b.state.vSpan[0]);
+            if (stackWindows.length > 0) {
+                const cursorRow = (my - workarea.y) / rowHeight;
+                const boundaries = [0, config.gridSize];
+                for (const w of stackWindows) {
+                    boundaries.push(w.state.vSpan[0], w.state.vSpan[1]);
+                }
+                const uniqueBoundaries = Array.from(new Set(boundaries))
+                    .filter(v => v >= 0 && v <= config.gridSize)
+                    .sort((a, b) => a - b);
+                let nearestBoundary = uniqueBoundaries[0];
+                let nearestDistance = Math.abs(cursorRow - nearestBoundary);
+                for (const boundary of uniqueBoundaries) {
+                    const distance = Math.abs(cursorRow - boundary);
+                    if (distance < nearestDistance) {
+                        nearestBoundary = boundary;
+                        nearestDistance = distance;
+                    }
+                }
+                const stackTargetHeight = Math.max(config.minSpan, Math.round(config.gridSize / (stackWindows.length + 1)));
+                const boundaryThreshold = Math.max(1, stackTargetHeight / 2);
+                if (nearestDistance <= boundaryThreshold) {
+                    if (nearestBoundary <= 0) {
+                        targetVSpan = [0, stackTargetHeight];
+                    }
+                    else if (nearestBoundary >= config.gridSize) {
+                        targetVSpan = [config.gridSize - stackTargetHeight, config.gridSize];
+                    }
+                    else {
+                        let startRow = Math.round(nearestBoundary - stackTargetHeight / 2);
+                        if (startRow < 0)
+                            startRow = 0;
+                        if (startRow + stackTargetHeight > config.gridSize) {
+                            startRow = config.gridSize - stackTargetHeight;
+                        }
+                        targetVSpan = [startRow, startRow + stackTargetHeight];
+                    }
                 }
             }
             // Calculate the elastic pushes
