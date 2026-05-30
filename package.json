@@ -7,7 +7,9 @@
     "dynamic-tiler": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build:cli": "tsc",
+    "build:extension": "esbuild src/extension.ts --bundle --outfile=/home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js --platform=neutral --target=es2020 --global-name=DynamicTiler --format=iife && echo 'var init = DynamicTiler.init;' >> /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js && echo 'var enable = DynamicTiler.enable;' >> /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js && echo 'var disable = DynamicTiler.disable;' >> /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js",
+    "build": "npm run build:cli && npm run build:extension",
     "test": "jest",
     "tile": "ts-node src/cli.ts"
   },
@@ -20,10 +22,10 @@
   ],
   "author": "",
   "license": "MIT",
-  "dependencies": {},
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.24",
+    "esbuild": "^0.28.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",

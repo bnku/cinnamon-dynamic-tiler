@@ -67,7 +67,55 @@ export class TilingUseCase {
         continue;
       }
 
-      const cachedWin = allCached[id];
+      let cachedWin = allCached[id];
+      if (!cachedWin) {
+        try {
+          const currentGeom = this.shell.getWindowGeometry(id);
+          const ext = this.shell.getFrameExtents(id);
+          const currentVisible = {
+            x: currentGeom.x + ext.left,
+            y: currentGeom.y + ext.top,
+            width: currentGeom.width - ext.left - ext.right,
+            height: currentGeom.height - ext.top - ext.bottom,
+          };
+          const currentMonitor = this.shell.findMonitorForWindow(currentVisible, monitors);
+
+          // Convert current physical geometry to logical grid spans
+          const hSpan = TilingEngine.geometryToHSpan(currentVisible, currentMonitor, config);
+          const vSpan = TilingEngine.geometryToVSpan(currentVisible, currentMonitor, config);
+
+          // Verify if window matches grid layout with small tolerance
+          const testState = {
+            hIndex: TilingEngine.spanToHIndex(hSpan),
+            vIndex: TilingEngine.spanToVIndex(vSpan),
+            hSpan,
+            vSpan,
+            lastDirection: null as any
+          };
+          const idealGeom = TilingEngine.stateToGeometry(testState, currentMonitor, config);
+
+          const diffX = Math.abs(currentVisible.x - idealGeom.x);
+          const diffY = Math.abs(currentVisible.y - idealGeom.y);
+          const diffW = Math.abs(currentVisible.width - idealGeom.width);
+          const diffH = Math.abs(currentVisible.height - idealGeom.height);
+
+          const SNAP_THRESHOLD = 80; // High tolerance for matching grid structures
+          if (diffX <= SNAP_THRESHOLD && diffY <= SNAP_THRESHOLD && diffW <= SNAP_THRESHOLD && diffH <= SNAP_THRESHOLD) {
+            const restoredState = {
+              hIndex: TilingEngine.spanToHIndex(hSpan),
+              vIndex: TilingEngine.spanToVIndex(vSpan),
+              hSpan,
+              vSpan,
+              lastDirection: null as any
+            };
+            this.cache.saveState(id, restoredState, currentVisible, currentGeom);
+            cachedWin = this.cache.getCachedWindow(id)!;
+          }
+        } catch {
+          // Ignore failures for individual windows
+        }
+      }
+
       if (!cachedWin) continue;
 
       let windowState = { ...cachedWin.state };
