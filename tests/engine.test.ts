@@ -535,11 +535,146 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     );
 
     // winA расширяется до [0, 6]
-    // winB сдвигается до [6, 8] (сжимается до ширины 2)
+    // winB сдвигается до [6, 10] (так как справа свободно, оно сдвигается целиком, не сжимаясь)
     // winC НЕ ДОЛЖНО быть затронуто, так как между B и C нет пересечения по вертикали!
     expect(chain['winA'].hSpan).toEqual([0, 6]);
-    expect(chain['winB'].hSpan).toEqual([6, 8]);
+    expect(chain['winB'].hSpan).toEqual([6, 10]);
     expect(chain['winC'].hSpan).toEqual([8, 12]);
+  });
+
+  test('should propagate compression chain vertically for 3 windows stacked on top of each other', () => {
+    // Три окна друг над другом:
+    // Окно A: [0, 12] по горизонтали, [0, 4] по вертикали (верхнее)
+    // Окно B: [0, 12] по горизонтали, [4, 8] по vertical (среднее)
+    // Окно C (активное): [0, 12] по горизонтали, [8, 12] по vertical (нижнее)
+    const winA = {
+      windowId: 'winA',
+      state: { hIndex: 5, vIndex: 1, hSpan: [0, 12] as [number, number], vSpan: [0, 4] as [number, number], lastDirection: 'up' as const }
+    };
+    const winB = {
+      windowId: 'winB',
+      state: { hIndex: 5, vIndex: 3, hSpan: [0, 12] as [number, number], vSpan: [4, 8] as [number, number], lastDirection: 'down' as const }
+    };
+    const winC = {
+      windowId: 'winC',
+      state: { hIndex: 5, vIndex: 8, hSpan: [0, 12] as [number, number], vSpan: [8, 12] as [number, number], lastDirection: 'down' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'winC',
+      'up',
+      fakeConfig,
+      [winA, winB, winC]
+    );
+
+    // winC расширяется вверх до [6, 12] (шаг 2)
+    // winB сдвигается вверх на 2 единицы до [4, 6] (сжимается до высоты 2)
+    // winA сдвигается вверх до [0, 4] (остается без изменений, так как вверху свободно)
+    expect(chain['winC'].vSpan).toEqual([6, 12]);
+    expect(chain['winB'].vSpan).toEqual([4, 6]);
+    expect(chain['winA'].vSpan).toEqual([0, 4]);
+  });
+
+  test('should pull sibling window when active window shrinks vertically', () => {
+    // Окно A (активное, верхнее): [0, 12] x [0, 8]
+    // Окно B (нижнее): [0, 12] x [8, 12] (прилипло к низу экрана 12)
+    const winA = {
+      windowId: 'winA',
+      state: { hIndex: 5, vIndex: 5, hSpan: [0, 12] as [number, number], vSpan: [0, 8] as [number, number], lastDirection: 'down' as const }
+    };
+    const winB = {
+      windowId: 'winB',
+      state: { hIndex: 5, vIndex: 8, hSpan: [0, 12] as [number, number], vSpan: [8, 12] as [number, number], lastDirection: 'down' as const }
+    };
+
+    // Окно A сжимается снизу-вверх: vSpan становится [0, 6]
+    const chain = TilingEngine.calculateChainTransitions(
+      'winA',
+      'up',
+      fakeConfig,
+      [winA, winB]
+    );
+
+    // winA уменьшилось до [0, 6] (шаг 2)
+    // winB притянулось вслед за ним до [6, 12] (расширилось, так как было прилипшим к нижнему краю)
+    expect(chain['winA'].vSpan).toEqual([0, 6]);
+    expect(chain['winB'].vSpan).toEqual([6, 12]);
+  });
+
+  test('should pull and shift sibling window when it is not clamped to the screen edge vertically', () => {
+    // Окно A (активное, верхнее): [0, 12] x [0, 8]
+    // Окно B (нижнее): [0, 12] x [8, 10] (не прилипло к низу экрана 12)
+    const winA = {
+      windowId: 'winA',
+      state: { hIndex: 5, vIndex: 5, hSpan: [0, 12] as [number, number], vSpan: [0, 8] as [number, number], lastDirection: 'down' as const }
+    };
+    const winB = {
+      windowId: 'winB',
+      state: { hIndex: 5, vIndex: 8, hSpan: [0, 12] as [number, number], vSpan: [8, 10] as [number, number], lastDirection: 'down' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'winA',
+      'up',
+      fakeConfig,
+      [winA, winB]
+    );
+
+    // winA уменьшилось до [0, 6]
+    // winB притянулось до [6, 8] (сдвинулось целиком вверх, сохранив высоту 2)
+    expect(chain['winA'].vSpan).toEqual([0, 6]);
+    expect(chain['winB'].vSpan).toEqual([6, 8]);
+  });
+
+  test('should pull sibling window when active window shrinks horizontally', () => {
+    // Окно A (активное, левое): [0, 8] x [0, 12]
+    // Окно B (правое): [8, 12] x [0, 12] (прилипло к правому краю 12)
+    const winA = {
+      windowId: 'winA',
+      state: { hIndex: 5, vIndex: 5, hSpan: [0, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const winB = {
+      windowId: 'winB',
+      state: { hIndex: 8, vIndex: 5, hSpan: [8, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+
+    // Окно A сжимается справа-налево: hSpan становится [0, 6]
+    const chain = TilingEngine.calculateChainTransitions(
+      'winA',
+      'left',
+      fakeConfig,
+      [winA, winB]
+    );
+
+    // winA уменьшилось до [0, 6] (шаг 2)
+    // winB притянулось вслед за ним до [6, 12] (расширилось, так как было прилипшим к правому краю)
+    expect(chain['winA'].hSpan).toEqual([0, 6]);
+    expect(chain['winB'].hSpan).toEqual([6, 12]);
+  });
+
+  test('should pull and shift sibling window when it is not clamped to the screen edge horizontally', () => {
+    // Окно A (активное, левое): [0, 8] x [0, 12]
+    // Окно B (правое): [8, 10] x [0, 12] (не прилипло к правому краю 12)
+    const winA = {
+      windowId: 'winA',
+      state: { hIndex: 5, vIndex: 5, hSpan: [0, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const winB = {
+      windowId: 'winB',
+      state: { hIndex: 8, vIndex: 5, hSpan: [8, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'winA',
+      'left',
+      fakeConfig,
+      [winA, winB]
+    );
+
+    // winA уменьшилось до [0, 6]
+    // winB притянулось до [6, 8] (сдвинулось целиком влево, сохранив ширину 2)
+    expect(chain['winA'].hSpan).toEqual([0, 6]);
+    expect(chain['winB'].hSpan).toEqual([6, 8]);
   });
 });
 

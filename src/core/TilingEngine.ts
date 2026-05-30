@@ -171,7 +171,7 @@ export class TilingEngine {
             newEnd = Math.max(config.minSpan, end - config.step);
           }
           const targetSpan: [number, number] = [newStart, newEnd];
-          const leftCollision = targetSpan[0] < currentState.hSpan[0] && ChainBlockDetector.isLeftChainBlocked(currentState.hSpan[0], siblingSpans, config);
+          const leftCollision = targetSpan[0] < currentState.hSpan[0] && ChainBlockDetector.isLeftChainBlocked(currentState.hSpan[0], siblingSpans, config, currentState.vSpan);
 
           if (leftCollision) {
             const currentStart = currentState.hSpan[0];
@@ -199,7 +199,7 @@ export class TilingEngine {
             newStart = Math.min(config.gridSize - config.minSpan, start + config.step);
           }
           const targetSpan: [number, number] = [newStart, newEnd];
-          const rightCollision = targetSpan[1] > currentState.hSpan[1] && ChainBlockDetector.isRightChainBlocked(currentState.hSpan[1], siblingSpans, config);
+          const rightCollision = targetSpan[1] > currentState.hSpan[1] && ChainBlockDetector.isRightChainBlocked(currentState.hSpan[1], siblingSpans, config, currentState.vSpan);
 
           if (rightCollision) {
             const currentStart = currentState.hSpan[0];
@@ -227,7 +227,7 @@ export class TilingEngine {
             newEnd = Math.max(config.minSpan, end - config.step);
           }
           const targetSpan: [number, number] = [newStart, newEnd];
-          const topCollision = targetSpan[0] < currentState.vSpan[0] && ChainBlockDetector.isTopChainBlocked(currentState.vSpan[0], siblingSpans, config);
+          const topCollision = targetSpan[0] < currentState.vSpan[0] && ChainBlockDetector.isTopChainBlocked(currentState.vSpan[0], siblingSpans, config, currentState.hSpan);
 
           if (topCollision) {
             const currentStart = currentState.vSpan[0];
@@ -255,7 +255,7 @@ export class TilingEngine {
             newStart = Math.min(config.gridSize - config.minSpan, start + config.step);
           }
           const targetSpan: [number, number] = [newStart, newEnd];
-          const bottomCollision = targetSpan[1] > currentState.vSpan[1] && ChainBlockDetector.isBottomChainBlocked(currentState.vSpan[1], siblingSpans, config);
+          const bottomCollision = targetSpan[1] > currentState.vSpan[1] && ChainBlockDetector.isBottomChainBlocked(currentState.vSpan[1], siblingSpans, config, currentState.hSpan);
 
           if (bottomCollision) {
             const currentStart = currentState.vSpan[0];

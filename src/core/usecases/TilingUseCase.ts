@@ -165,10 +165,14 @@ export class TilingUseCase {
       const originalGeom = cachedWin ? (cachedWin.originalGeometry || windowGeom) : windowGeom;
 
       const nextGeom = TilingEngine.stateToGeometry(activeNextState, activeMonitor, config);
-      this.shell.unmaximizeWindow(windowId);
-      this.shell.applyGeometry(windowId, nextGeom);
-      this.cache.saveState(windowId, activeNextState, nextGeom, originalGeom);
-      this.shell.raiseWindow(windowId);
+      try {
+        this.shell.unmaximizeWindow(windowId);
+        this.shell.applyGeometry(windowId, nextGeom);
+        this.cache.saveState(windowId, activeNextState, nextGeom, originalGeom);
+        this.shell.raiseWindow(windowId);
+      } catch {
+        // Игнорируем ошибки для активного окна
+      }
     }
   }
 

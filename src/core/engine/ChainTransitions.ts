@@ -93,48 +93,50 @@ export class ChainTransitions {
 
       // Распространяем вправо
       for (let i = k + 1; i < N; i++) {
-        const prevOriginalEnd = sortedWins[i - 1].state.hSpan[1];
-        const currOriginalStart = sortedWins[i].state.hSpan[0];
-        
-        const prevWin = sortedWins[i - 1];
         const currWin = sortedWins[i];
-        const hasVSpanOverlap = Math.max(prevWin.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(prevWin.state.vSpan[1], currWin.state.vSpan[1]);
-        const wasTouching = Math.abs(currOriginalStart - prevOriginalEnd) === 0 && hasVSpanOverlap;
+        const currOriginalStart = currWin.state.hSpan[0];
 
-        if (wasTouching) {
-          const origStart = sortedWins[i].state.hSpan[0];
-          const origEnd = sortedWins[i].state.hSpan[1];
-          newSpans[i][0] = newSpans[i - 1][1];
+        const touchBoundaries: number[] = [];
+        for (let j = 0; j < i; j++) {
+          const prevWin = sortedWins[j];
+          const hasVSpanOverlap = Math.max(prevWin.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(prevWin.state.vSpan[1], currWin.state.vSpan[1]);
+          const touching = prevWin.state.hSpan[1] === currOriginalStart && hasVSpanOverlap;
+          if (touching) {
+            touchBoundaries.push(newSpans[j][1]);
+          }
+        }
+
+        if (touchBoundaries.length > 0) {
+          const origStart = currWin.state.hSpan[0];
+          const origEnd = currWin.state.hSpan[1];
+          newSpans[i][0] = Math.max(...touchBoundaries);
           const shift = newSpans[i][0] - origStart;
 
           if (shift > 0) {
-            let R = i;
-            while (R + 1 < N) {
-              const nextStart = sortedWins[R + 1].state.hSpan[0];
-              const currEnd = sortedWins[R].state.hSpan[1];
-              const overlap = Math.max(sortedWins[R].state.vSpan[0], sortedWins[R + 1].state.vSpan[0]) < 
-                              Math.min(sortedWins[R].state.vSpan[1], sortedWins[R + 1].state.vSpan[1]);
-              if (Math.abs(nextStart - currEnd) === 0 && overlap) {
-                R++;
-              } else {
-                break;
+            let limit = config.gridSize;
+            for (const other of sortedWins) {
+              if (other.windowId === currWin.windowId) continue;
+              const hasVSpanOverlap = Math.max(other.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(other.state.vSpan[1], currWin.state.vSpan[1]);
+              if (other.state.hSpan[0] >= origEnd && hasVSpanOverlap) {
+                if (other.state.hSpan[0] < limit) {
+                  limit = other.state.hSpan[0];
+                }
               }
             }
-            const chainEnd = sortedWins[R].state.hSpan[1];
-            const limitRight = (R + 1 < N) ? sortedWins[R + 1].state.hSpan[0] : config.gridSize;
-            const freeSpaceRight = limitRight - chainEnd;
-            const allowedShift = Math.min(shift, freeSpaceRight);
+            const freeSpace = limit - origEnd;
+            const allowedShift = Math.max(0, Math.min(shift, freeSpace));
             newSpans[i][1] = origEnd + allowedShift;
+          } else if (shift < 0) {
+            const isClampedToEdge = origEnd === config.gridSize;
+            newSpans[i][1] = isClampedToEdge ? origEnd : origEnd + shift;
           }
 
           const width = newSpans[i][1] - newSpans[i][0];
-
           if (width < MIN_WIDTH) {
             newSpans[i][1] = newSpans[i][0] + MIN_WIDTH;
-
             if (newSpans[i][1] > config.gridSize) {
               newSpans[i][1] = config.gridSize;
-              newSpans[i][0] = config.gridSize - MIN_WIDTH; // наложение
+              newSpans[i][0] = config.gridSize - MIN_WIDTH;
             }
           }
         }
@@ -142,48 +144,50 @@ export class ChainTransitions {
 
       // Распространяем влево
       for (let i = k - 1; i >= 0; i--) {
-        const nextOriginalStart = sortedWins[i + 1].state.hSpan[0];
-        const currOriginalEnd = sortedWins[i].state.hSpan[1];
-
-        const nextWin = sortedWins[i + 1];
         const currWin = sortedWins[i];
-        const hasVSpanOverlap = Math.max(nextWin.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(nextWin.state.vSpan[1], currWin.state.vSpan[1]);
-        const wasTouching = Math.abs(nextOriginalStart - currOriginalEnd) === 0 && hasVSpanOverlap;
+        const currOriginalEnd = currWin.state.hSpan[1];
 
-        if (wasTouching) {
-          const origStart = sortedWins[i].state.hSpan[0];
-          const origEnd = sortedWins[i].state.hSpan[1];
-          newSpans[i][1] = newSpans[i + 1][0];
+        const touchBoundaries: number[] = [];
+        for (let j = i + 1; j < N; j++) {
+          const nextWin = sortedWins[j];
+          const hasVSpanOverlap = Math.max(nextWin.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(nextWin.state.vSpan[1], currWin.state.vSpan[1]);
+          const touching = nextWin.state.hSpan[0] === currOriginalEnd && hasVSpanOverlap;
+          if (touching) {
+            touchBoundaries.push(newSpans[j][0]);
+          }
+        }
+
+        if (touchBoundaries.length > 0) {
+          const origStart = currWin.state.hSpan[0];
+          const origEnd = currWin.state.hSpan[1];
+          newSpans[i][1] = Math.min(...touchBoundaries);
           const shift = origEnd - newSpans[i][1];
 
           if (shift > 0) {
-            let L = i;
-            while (L - 1 >= 0) {
-              const prevEnd = sortedWins[L - 1].state.hSpan[1];
-              const currStart = sortedWins[L].state.hSpan[0];
-              const overlap = Math.max(sortedWins[L].state.vSpan[0], sortedWins[L - 1].state.vSpan[0]) < 
-                              Math.min(sortedWins[L].state.vSpan[1], sortedWins[L - 1].state.vSpan[1]);
-              if (Math.abs(currStart - prevEnd) === 0 && overlap) {
-                L--;
-              } else {
-                break;
+            let limit = 0;
+            for (const other of sortedWins) {
+              if (other.windowId === currWin.windowId) continue;
+              const hasVSpanOverlap = Math.max(other.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(other.state.vSpan[1], currWin.state.vSpan[1]);
+              if (other.state.hSpan[1] <= origStart && hasVSpanOverlap) {
+                if (other.state.hSpan[1] > limit) {
+                  limit = other.state.hSpan[1];
+                }
               }
             }
-            const chainStart = sortedWins[L].state.hSpan[0];
-            const limitLeft = (L - 1 >= 0) ? sortedWins[L - 1].state.hSpan[1] : 0;
-            const freeSpaceLeft = chainStart - limitLeft;
-            const allowedShift = Math.min(shift, freeSpaceLeft);
+            const freeSpace = origStart - limit;
+            const allowedShift = Math.max(0, Math.min(shift, freeSpace));
             newSpans[i][0] = origStart - allowedShift;
+          } else if (shift < 0) {
+            const isClampedToEdge = origStart === 0;
+            newSpans[i][0] = isClampedToEdge ? origStart : origStart - shift;
           }
 
           const width = newSpans[i][1] - newSpans[i][0];
-
           if (width < MIN_WIDTH) {
             newSpans[i][0] = newSpans[i][1] - MIN_WIDTH;
-
             if (newSpans[i][0] < 0) {
               newSpans[i][0] = 0;
-              newSpans[i][1] = MIN_WIDTH; // наложение
+              newSpans[i][1] = MIN_WIDTH;
             }
           }
         }
@@ -226,48 +230,50 @@ export class ChainTransitions {
 
       // Распространяем вниз
       for (let i = k + 1; i < N; i++) {
-        const prevOriginalEnd = sortedWins[i - 1].state.vSpan[1];
-        const currOriginalStart = sortedWins[i].state.vSpan[0];
-        
-        const prevWin = sortedWins[i - 1];
         const currWin = sortedWins[i];
-        const hasHSpanOverlap = Math.max(prevWin.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(prevWin.state.hSpan[1], currWin.state.hSpan[1]);
-        const wasTouching = Math.abs(currOriginalStart - prevOriginalEnd) === 0 && hasHSpanOverlap;
+        const currOriginalStart = currWin.state.vSpan[0];
 
-        if (wasTouching) {
-          const origStart = sortedWins[i].state.vSpan[0];
-          const origEnd = sortedWins[i].state.vSpan[1];
-          newSpans[i][0] = newSpans[i - 1][1];
+        const touchBoundaries: number[] = [];
+        for (let j = 0; j < i; j++) {
+          const prevWin = sortedWins[j];
+          const hasHSpanOverlap = Math.max(prevWin.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(prevWin.state.hSpan[1], currWin.state.hSpan[1]);
+          const touching = prevWin.state.vSpan[1] === currOriginalStart && hasHSpanOverlap;
+          if (touching) {
+            touchBoundaries.push(newSpans[j][1]);
+          }
+        }
+
+        if (touchBoundaries.length > 0) {
+          const origStart = currWin.state.vSpan[0];
+          const origEnd = currWin.state.vSpan[1];
+          newSpans[i][0] = Math.max(...touchBoundaries);
           const shift = newSpans[i][0] - origStart;
 
           if (shift > 0) {
-            let R = i;
-            while (R + 1 < N) {
-              const nextStart = sortedWins[R + 1].state.vSpan[0];
-              const currEnd = sortedWins[R].state.vSpan[1];
-              const overlap = Math.max(sortedWins[R].state.hSpan[0], sortedWins[R + 1].state.hSpan[0]) < 
-                              Math.min(sortedWins[R].state.hSpan[1], sortedWins[R + 1].state.hSpan[1]);
-              if (Math.abs(nextStart - currEnd) === 0 && overlap) {
-                R++;
-              } else {
-                break;
+            let limit = config.gridSize;
+            for (const other of sortedWins) {
+              if (other.windowId === currWin.windowId) continue;
+              const hasHSpanOverlap = Math.max(other.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(other.state.hSpan[1], currWin.state.hSpan[1]);
+              if (other.state.vSpan[0] >= origEnd && hasHSpanOverlap) {
+                if (other.state.vSpan[0] < limit) {
+                  limit = other.state.vSpan[0];
+                }
               }
             }
-            const chainEnd = sortedWins[R].state.vSpan[1];
-            const limitBottom = (R + 1 < N) ? sortedWins[R + 1].state.vSpan[0] : config.gridSize;
-            const freeSpaceBottom = limitBottom - chainEnd;
-            const allowedShift = Math.min(shift, freeSpaceBottom);
+            const freeSpace = limit - origEnd;
+            const allowedShift = Math.max(0, Math.min(shift, freeSpace));
             newSpans[i][1] = origEnd + allowedShift;
+          } else if (shift < 0) {
+            const isClampedToEdge = origEnd === config.gridSize;
+            newSpans[i][1] = isClampedToEdge ? origEnd : origEnd + shift;
           }
 
           const height = newSpans[i][1] - newSpans[i][0];
-
           if (height < MIN_HEIGHT) {
             newSpans[i][1] = newSpans[i][0] + MIN_HEIGHT;
-
             if (newSpans[i][1] > config.gridSize) {
               newSpans[i][1] = config.gridSize;
-              newSpans[i][0] = config.gridSize - MIN_HEIGHT; // наложение
+              newSpans[i][0] = config.gridSize - MIN_HEIGHT;
             }
           }
         }
@@ -275,48 +281,50 @@ export class ChainTransitions {
 
       // Распространяем вверх
       for (let i = k - 1; i >= 0; i--) {
-        const nextOriginalStart = sortedWins[i + 1].state.vSpan[0];
-        const currOriginalEnd = sortedWins[i].state.vSpan[1];
-
-        const nextWin = sortedWins[i + 1];
         const currWin = sortedWins[i];
-        const hasHSpanOverlap = Math.max(nextWin.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(nextWin.state.hSpan[1], currWin.state.hSpan[1]);
-        const wasTouching = Math.abs(nextOriginalStart - currOriginalEnd) === 0 && hasHSpanOverlap;
+        const currOriginalEnd = currWin.state.vSpan[1];
 
-        if (wasTouching) {
-          const origStart = sortedWins[i].state.vSpan[0];
-          const origEnd = sortedWins[i].state.vSpan[1];
-          newSpans[i][1] = newSpans[i + 1][0];
+        const touchBoundaries: number[] = [];
+        for (let j = i + 1; j < N; j++) {
+          const nextWin = sortedWins[j];
+          const hasHSpanOverlap = Math.max(nextWin.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(nextWin.state.hSpan[1], currWin.state.hSpan[1]);
+          const touching = nextWin.state.vSpan[0] === currOriginalEnd && hasHSpanOverlap;
+          if (touching) {
+            touchBoundaries.push(newSpans[j][0]);
+          }
+        }
+
+        if (touchBoundaries.length > 0) {
+          const origStart = currWin.state.vSpan[0];
+          const origEnd = currWin.state.vSpan[1];
+          newSpans[i][1] = Math.min(...touchBoundaries);
           const shift = origEnd - newSpans[i][1];
 
           if (shift > 0) {
-            let L = i;
-            while (L - 1 >= 0) {
-              const prevEnd = sortedWins[L - 1].state.vSpan[1];
-              const currStart = sortedWins[L].state.vSpan[0];
-              const overlap = Math.max(sortedWins[L].state.hSpan[0], sortedWins[L - 1].state.hSpan[0]) < 
-                              Math.min(sortedWins[L].state.hSpan[1], sortedWins[L - 1].state.hSpan[1]);
-              if (Math.abs(currStart - prevEnd) === 0 && overlap) {
-                L--;
-              } else {
-                break;
+            let limit = 0;
+            for (const other of sortedWins) {
+              if (other.windowId === currWin.windowId) continue;
+              const hasHSpanOverlap = Math.max(other.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(other.state.hSpan[1], currWin.state.hSpan[1]);
+              if (other.state.vSpan[1] <= origStart && hasHSpanOverlap) {
+                if (other.state.vSpan[1] > limit) {
+                  limit = other.state.vSpan[1];
+                }
               }
             }
-            const chainStart = sortedWins[L].state.vSpan[0];
-            const limitTop = (L - 1 >= 0) ? sortedWins[L - 1].state.vSpan[1] : 0;
-            const freeSpaceTop = chainStart - limitTop;
-            const allowedShift = Math.min(shift, freeSpaceTop);
+            const freeSpace = origStart - limit;
+            const allowedShift = Math.max(0, Math.min(shift, freeSpace));
             newSpans[i][0] = origStart - allowedShift;
+          } else if (shift < 0) {
+            const isClampedToEdge = origStart === 0;
+            newSpans[i][0] = isClampedToEdge ? origStart : origStart - shift;
           }
 
           const height = newSpans[i][1] - newSpans[i][0];
-
           if (height < MIN_HEIGHT) {
             newSpans[i][0] = newSpans[i][1] - MIN_HEIGHT;
-
             if (newSpans[i][0] < 0) {
               newSpans[i][0] = 0;
-              newSpans[i][1] = MIN_HEIGHT; // наложение
+              newSpans[i][1] = MIN_HEIGHT;
             }
           }
         }
