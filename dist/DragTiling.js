@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.hasLayoutOverlaps = hasLayoutOverlaps;
+exports.solveDragTransitions = solveDragTransitions;
+exports.restoreDragTransaction = restoreDragTransaction;
 exports.computeDragTarget = computeDragTarget;
 exports.calculateDragTransitions = calculateDragTransitions;
 exports.collapseVacancy = collapseVacancy;
@@ -20,6 +22,99 @@ function hasLayoutOverlaps(states) {
         }
     }
     return false;
+}
+function solveDragTransitions(draggedId, targetHSpan, targetVSpan, config, activeWindows, options = {}) {
+    const states = calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, activeWindows, options);
+    const reason = getDragBlockReason(states, config);
+    return {
+        status: reason ? 'blocked' : 'valid',
+        states,
+        affected: getAffectedWindowIds(states, activeWindows),
+        reason
+    };
+}
+function getDragBlockReason(states, config) {
+    for (const state of Object.values(states)) {
+        if (state.hSpan[0] < 0 ||
+            state.vSpan[0] < 0 ||
+            state.hSpan[1] > config.gridSize ||
+            state.vSpan[1] > config.gridSize ||
+            state.hSpan[0] >= state.hSpan[1] ||
+            state.vSpan[0] >= state.vSpan[1]) {
+            return 'outOfBounds';
+        }
+        if (state.hSpan[1] - state.hSpan[0] < config.minSpan ||
+            state.vSpan[1] - state.vSpan[0] < config.minSpan) {
+            return 'tooSmall';
+        }
+    }
+    if (hasLayoutOverlaps(states)) {
+        return 'wouldOverlap';
+    }
+    return undefined;
+}
+function cloneWindowState(state) {
+    return {
+        hIndex: state.hIndex,
+        vIndex: state.vIndex,
+        hSpan: [...state.hSpan],
+        vSpan: [...state.vSpan],
+        lastDirection: state.lastDirection
+    };
+}
+function statesEqual(a, b) {
+    if (!a || !b)
+        return false;
+    return a.hSpan[0] === b.hSpan[0] &&
+        a.hSpan[1] === b.hSpan[1] &&
+        a.vSpan[0] === b.vSpan[0] &&
+        a.vSpan[1] === b.vSpan[1];
+}
+function restoreDragTransaction(snapshot, draggedId, config, activeWindows) {
+    if (!snapshot || snapshot.draggedId !== draggedId)
+        return null;
+    const currentStates = new Map(activeWindows.map(w => [w.windowId, w.state]));
+    if (!statesEqual(currentStates.get(draggedId), snapshot.afterStates[draggedId])) {
+        return null;
+    }
+    const idsToRestore = snapshot.affected
+        .filter(id => id !== draggedId && snapshot.beforeStates[id] && snapshot.afterStates[id])
+        .sort((a, b) => a.localeCompare(b));
+    if (idsToRestore.length === 0)
+        return null;
+    for (const id of idsToRestore) {
+        if (!statesEqual(currentStates.get(id), snapshot.afterStates[id])) {
+            return null;
+        }
+    }
+    const restoredStates = {};
+    for (const w of activeWindows) {
+        if (w.windowId === draggedId)
+            continue;
+        restoredStates[w.windowId] = cloneWindowState(w.state);
+    }
+    for (const id of idsToRestore) {
+        restoredStates[id] = cloneWindowState(snapshot.beforeStates[id]);
+    }
+    if (getDragBlockReason(restoredStates, config)) {
+        return null;
+    }
+    return restoredStates;
+}
+function getAffectedWindowIds(states, activeWindows) {
+    const originalStates = new Map(activeWindows.map(w => [w.windowId, w.state]));
+    return Object.keys(states)
+        .filter(id => {
+        const previous = originalStates.get(id);
+        if (!previous)
+            return true;
+        const next = states[id];
+        return previous.hSpan[0] !== next.hSpan[0] ||
+            previous.hSpan[1] !== next.hSpan[1] ||
+            previous.vSpan[0] !== next.vSpan[0] ||
+            previous.vSpan[1] !== next.vSpan[1];
+    })
+        .sort((a, b) => a.localeCompare(b));
 }
 function computeDragTarget(input) {
     const { draggedId, mx, my, monitor, config, activeWindows } = input;

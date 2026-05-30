@@ -11,6 +11,24 @@ export interface DragTransitionOptions {
   intentPoint?: DragIntentPoint;
 }
 
+export type DragSolveStatus = 'valid' | 'blocked';
+export type DragBlockReason = 'wouldOverlap' | 'tooSmall' | 'outOfBounds';
+
+export interface DragSolveResult {
+  status: DragSolveStatus;
+  states: Record<string, WindowState>;
+  affected: string[];
+  reason?: DragBlockReason;
+}
+
+export interface DragTransactionSnapshot {
+  draggedId: string;
+  monitorId: string;
+  beforeStates: Record<string, WindowState>;
+  afterStates: Record<string, WindowState>;
+  affected: string[];
+}
+
 export interface DragTargetInput {
   draggedId: string;
   mx: number;
@@ -44,6 +62,143 @@ export function hasLayoutOverlaps(states: Record<string, WindowState>): boolean 
     }
   }
   return false;
+}
+
+export function solveDragTransitions(
+  draggedId: string,
+  targetHSpan: [number, number],
+  targetVSpan: [number, number],
+  config: Config,
+  activeWindows: { windowId: string; state: WindowState }[],
+  options: DragTransitionOptions = {}
+): DragSolveResult {
+  const states = calculateDragTransitions(
+    draggedId,
+    targetHSpan,
+    targetVSpan,
+    config,
+    activeWindows,
+    options
+  );
+  const reason = getDragBlockReason(states, config);
+
+  return {
+    status: reason ? 'blocked' : 'valid',
+    states,
+    affected: getAffectedWindowIds(states, activeWindows),
+    reason
+  };
+}
+
+function getDragBlockReason(
+  states: Record<string, WindowState>,
+  config: Config
+): DragBlockReason | undefined {
+  for (const state of Object.values(states)) {
+    if (
+      state.hSpan[0] < 0 ||
+      state.vSpan[0] < 0 ||
+      state.hSpan[1] > config.gridSize ||
+      state.vSpan[1] > config.gridSize ||
+      state.hSpan[0] >= state.hSpan[1] ||
+      state.vSpan[0] >= state.vSpan[1]
+    ) {
+      return 'outOfBounds';
+    }
+    if (
+      state.hSpan[1] - state.hSpan[0] < config.minSpan ||
+      state.vSpan[1] - state.vSpan[0] < config.minSpan
+    ) {
+      return 'tooSmall';
+    }
+  }
+
+  if (hasLayoutOverlaps(states)) {
+    return 'wouldOverlap';
+  }
+
+  return undefined;
+}
+
+function cloneWindowState(state: WindowState): WindowState {
+  return {
+    hIndex: state.hIndex,
+    vIndex: state.vIndex,
+    hSpan: [...state.hSpan],
+    vSpan: [...state.vSpan],
+    lastDirection: state.lastDirection
+  };
+}
+
+function statesEqual(a: WindowState | undefined, b: WindowState | undefined): boolean {
+  if (!a || !b) return false;
+
+  return a.hSpan[0] === b.hSpan[0] &&
+    a.hSpan[1] === b.hSpan[1] &&
+    a.vSpan[0] === b.vSpan[0] &&
+    a.vSpan[1] === b.vSpan[1];
+}
+
+export function restoreDragTransaction(
+  snapshot: DragTransactionSnapshot | null,
+  draggedId: string,
+  config: Config,
+  activeWindows: { windowId: string; state: WindowState }[]
+): Record<string, WindowState> | null {
+  if (!snapshot || snapshot.draggedId !== draggedId) return null;
+
+  const currentStates = new Map(activeWindows.map(w => [w.windowId, w.state]));
+  if (!statesEqual(currentStates.get(draggedId), snapshot.afterStates[draggedId])) {
+    return null;
+  }
+
+  const idsToRestore = snapshot.affected
+    .filter(id => id !== draggedId && snapshot.beforeStates[id] && snapshot.afterStates[id])
+    .sort((a, b) => a.localeCompare(b));
+
+  if (idsToRestore.length === 0) return null;
+
+  for (const id of idsToRestore) {
+    if (!statesEqual(currentStates.get(id), snapshot.afterStates[id])) {
+      return null;
+    }
+  }
+
+  const restoredStates: Record<string, WindowState> = {};
+  for (const w of activeWindows) {
+    if (w.windowId === draggedId) continue;
+    restoredStates[w.windowId] = cloneWindowState(w.state);
+  }
+
+  for (const id of idsToRestore) {
+    restoredStates[id] = cloneWindowState(snapshot.beforeStates[id]);
+  }
+
+  if (getDragBlockReason(restoredStates, config)) {
+    return null;
+  }
+
+  return restoredStates;
+}
+
+function getAffectedWindowIds(
+  states: Record<string, WindowState>,
+  activeWindows: { windowId: string; state: WindowState }[]
+): string[] {
+  const originalStates = new Map(activeWindows.map(w => [w.windowId, w.state]));
+
+  return Object.keys(states)
+    .filter(id => {
+      const previous = originalStates.get(id);
+      if (!previous) return true;
+
+      const next = states[id];
+      return previous.hSpan[0] !== next.hSpan[0] ||
+        previous.hSpan[1] !== next.hSpan[1] ||
+        previous.vSpan[0] !== next.vSpan[0] ||
+        previous.vSpan[1] !== next.vSpan[1];
+    })
+    .sort((a, b) => a.localeCompare(b));
 }
 
 export function computeDragTarget(input: DragTargetInput): DragTargetResult {

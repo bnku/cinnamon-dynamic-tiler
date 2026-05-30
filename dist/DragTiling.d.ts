@@ -7,6 +7,21 @@ export interface DragTransitionOptions {
     experimentalSwapSameShapeWindows?: boolean;
     intentPoint?: DragIntentPoint;
 }
+export type DragSolveStatus = 'valid' | 'blocked';
+export type DragBlockReason = 'wouldOverlap' | 'tooSmall' | 'outOfBounds';
+export interface DragSolveResult {
+    status: DragSolveStatus;
+    states: Record<string, WindowState>;
+    affected: string[];
+    reason?: DragBlockReason;
+}
+export interface DragTransactionSnapshot {
+    draggedId: string;
+    monitorId: string;
+    beforeStates: Record<string, WindowState>;
+    afterStates: Record<string, WindowState>;
+    affected: string[];
+}
 export interface DragTargetInput {
     draggedId: string;
     mx: number;
@@ -26,6 +41,14 @@ export interface DragTargetResult {
     intentPoint: DragIntentPoint;
 }
 export declare function hasLayoutOverlaps(states: Record<string, WindowState>): boolean;
+export declare function solveDragTransitions(draggedId: string, targetHSpan: [number, number], targetVSpan: [number, number], config: Config, activeWindows: {
+    windowId: string;
+    state: WindowState;
+}[], options?: DragTransitionOptions): DragSolveResult;
+export declare function restoreDragTransaction(snapshot: DragTransactionSnapshot | null, draggedId: string, config: Config, activeWindows: {
+    windowId: string;
+    state: WindowState;
+}[]): Record<string, WindowState> | null;
 export declare function computeDragTarget(input: DragTargetInput): DragTargetResult;
 export declare function calculateDragTransitions(draggedId: string, targetHSpan: [number, number], targetVSpan: [number, number], config: Config, activeWindows: {
     windowId: string;

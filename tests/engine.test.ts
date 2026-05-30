@@ -1,5 +1,5 @@
 import { TilingEngine } from '../src/core/TilingEngine';
-import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps } from '../src/DragTiling';
+import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps, restoreDragTransaction, solveDragTransitions } from '../src/DragTiling';
 import { ScreenInfo, WindowState, Config } from '../src/core/types';
 
 describe('TilingEngine - 12-Column Layout Calculations', () => {
@@ -1204,5 +1204,215 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     );
 
     expect(hasLayoutOverlaps(result)).toBe(false);
+  });
+
+  test('DnD solve result should explain overlap-blocked layouts', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 0, vIndex: 5, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 5, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = solveDragTransitions(
+      'left-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        experimentalSwapSameShapeWindows: false,
+        intentPoint: { h: 11, v: 6 }
+      }
+    );
+
+    expect(result.status).toBe('blocked');
+    expect(result.reason).toBe('wouldOverlap');
+    expect(result.affected).toContain('left-terminal');
+  });
+
+  test('DnD solve result should explain too-small target layouts', () => {
+    const result = solveDragTransitions(
+      'dragged-terminal',
+      [0, 1],
+      [0, 12],
+      fakeConfig,
+      []
+    );
+
+    expect(result.status).toBe('blocked');
+    expect(result.reason).toBe('tooSmall');
+    expect(result.affected).toEqual(['dragged-terminal']);
+  });
+
+  test('DnD solve result should expose affected windows for a clean swap', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 0, vIndex: 5, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 2, vIndex: 5, hSpan: [4, 6] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 5, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = solveDragTransitions(
+      'left-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        experimentalSwapSameShapeWindows: true,
+        intentPoint: { h: 11, v: 6 }
+      }
+    );
+
+    expect(result.status).toBe('valid');
+    expect(result.reason).toBeUndefined();
+    expect(result.affected).toEqual(['left-terminal', 'right-terminal']);
+  });
+
+  test('DnD solve result should stay stable when active windows arrive in a different order', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 0, vIndex: 2, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal-top',
+        state: { hIndex: 1, vIndex: 2, hSpan: [2, 4] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal-bottom',
+        state: { hIndex: 1, vIndex: 8, hSpan: [2, 4] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'dragged-terminal',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const canonical = (states: Record<string, WindowState>) => Object.fromEntries(
+      Object.entries(states)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, state]) => [id, { hSpan: state.hSpan, vSpan: state.vSpan }])
+    );
+
+    const expected = solveDragTransitions(
+      'dragged-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows
+    );
+    const permutations = [
+      [...activeWindows].reverse(),
+      [activeWindows[3], activeWindows[1], activeWindows[4], activeWindows[0], activeWindows[2]],
+      [activeWindows[2], activeWindows[0], activeWindows[3], activeWindows[1], activeWindows[4]]
+    ];
+
+    for (const permutation of permutations) {
+      const result = solveDragTransitions(
+        'dragged-terminal',
+        [10, 12],
+        [0, 12],
+        fakeConfig,
+        permutation
+      );
+
+      expect(result.status).toBe(expected.status);
+      expect(result.reason).toBe(expected.reason);
+      expect(result.affected).toEqual(expected.affected);
+      expect(canonical(result.states)).toEqual(canonical(expected.states));
+    }
+  });
+
+  test('DnD transaction restore should give a carved neighbor its previous space when the inserted window is extracted', () => {
+    const beforeWindows = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+    const inserted = solveDragTransitions(
+      'dragged-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      beforeWindows
+    );
+    const beforeStates = Object.fromEntries(beforeWindows.map(w => [w.windowId, w.state]));
+    const activeAfterInsert = Object.entries(inserted.states).map(([windowId, state]) => ({ windowId, state }));
+
+    const restored = restoreDragTransaction(
+      {
+        draggedId: 'dragged-terminal',
+        monitorId: 'HDMI-1',
+        beforeStates,
+        afterStates: inserted.states,
+        affected: inserted.affected
+      },
+      'dragged-terminal',
+      fakeConfig,
+      activeAfterInsert
+    );
+
+    expect(restored).not.toBeNull();
+    expect(restored!['chrome'].hSpan).toEqual([4, 12]);
+    expect(restored!['chrome'].vSpan).toEqual([0, 12]);
+    expect(restored!['dragged-terminal']).toBeUndefined();
+    expect(hasLayoutOverlaps(restored!)).toBe(false);
+  });
+
+  test('DnD transaction restore should fall back when the carved neighbor changed after insertion', () => {
+    const beforeWindows = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+    const inserted = solveDragTransitions(
+      'dragged-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      beforeWindows
+    );
+    const beforeStates = Object.fromEntries(beforeWindows.map(w => [w.windowId, w.state]));
+    const activeAfterManualChange = Object.entries(inserted.states).map(([windowId, state]) => ({
+      windowId,
+      state: windowId === 'chrome'
+        ? { ...state, hSpan: [4, 8] as [number, number] }
+        : state
+    }));
+
+    const restored = restoreDragTransaction(
+      {
+        draggedId: 'dragged-terminal',
+        monitorId: 'HDMI-1',
+        beforeStates,
+        afterStates: inserted.states,
+        affected: inserted.affected
+      },
+      'dragged-terminal',
+      fakeConfig,
+      activeAfterManualChange
+    );
+
+    expect(restored).toBeNull();
   });
 });

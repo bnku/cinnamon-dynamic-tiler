@@ -1,7 +1,7 @@
 import { TilingEngine } from './core/TilingEngine';
 import { TilingUseCase } from './core/usecases/TilingUseCase';
 import { CinnamonShellAdapter, CinnamonCache, CinnamonConfigProvider } from './CinnamonAdapters';
-import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps } from './DragTiling';
+import { collapseVacancy, computeDragTarget, restoreDragTransaction, solveDragTransitions, type DragTransactionSnapshot } from './DragTiling';
 import { TilePreview } from './TilePreview';
 import { WindowState } from './core/types';
 
@@ -56,6 +56,7 @@ class DynamicTilerExtension {
   private dragSession: any = null;
   private vacancyPreview: TilePreview | null = null;
   private blockedPreview: TilePreview | null = null;
+  private lastDndTransaction: DragTransactionSnapshot | null = null;
 
   constructor(metadata: any) {
     this.metadata = metadata;
@@ -208,6 +209,8 @@ class DynamicTilerExtension {
         sourceGeometry: cached ? { ...cached.originalGeometry } : { ...geom },
         sourceTiledGeometry: cached ? { ...cached.tiledGeometry } : null,
         lastDragStates: null,
+        lastDragBeforeStates: null,
+        lastDragAffected: [],
         cancelled: false,
         floated: false,
         dndEngaged: false
@@ -426,6 +429,8 @@ class DynamicTilerExtension {
         if (this.dragSession && (this.dragSession.lastDragStates || (this.dragSession.dndEngaged && !this.dragSession.floated))) {
           this.clearPreviews();
           this.dragSession.lastDragStates = null;
+          this.dragSession.lastDragBeforeStates = null;
+          this.dragSession.lastDragAffected = [];
           this.dragSession.floated = this.dragSession.wasTiled === true;
           this.dragSession.cancelled = !this.dragSession.floated;
           this.dragSession.dndEngaged = false;
@@ -548,7 +553,7 @@ class DynamicTilerExtension {
       });
 
       // Calculate the elastic pushes
-      const dragStates = calculateDragTransitions(
+      const dragResult = solveDragTransitions(
         this.draggedWindowId,
         dragTarget.targetHSpan,
         dragTarget.targetVSpan,
@@ -559,12 +564,15 @@ class DynamicTilerExtension {
           intentPoint: dragTarget.intentPoint
         }
       );
+      const dragStates = dragResult.states;
 
-      if (hasLayoutOverlaps(dragStates)) {
+      if (dragResult.status === 'blocked') {
         this.clearPlacementPreviews();
         this.lastDragStates = null;
         if (this.dragSession) {
           this.dragSession.lastDragStates = null;
+          this.dragSession.lastDragBeforeStates = null;
+          this.dragSession.lastDragAffected = [];
           this.dragSession.cancelled = true;
           this.dragSession.floated = false;
           this.dragSession.dndEngaged = true;
@@ -586,13 +594,26 @@ class DynamicTilerExtension {
             this.blockedPreview.show(win, frameGeom, parseInt(activeMonitor.id), true, 80, 140, false, 'blocked');
           }
         } catch (e) {}
+        global.log(`[Dynamic Tiler] DnD blocked: ${dragResult.reason || 'unknown'}`);
         return true;
       }
 
       this.clearBlockedPreview();
       this.lastDragStates = dragStates;
       if (this.dragSession) {
+        const beforeStates: Record<string, WindowState> = {};
+        for (const activeWindow of activeWindowsOnMonitor) {
+          beforeStates[activeWindow.windowId] = {
+            hIndex: activeWindow.state.hIndex,
+            vIndex: activeWindow.state.vIndex,
+            hSpan: [...activeWindow.state.hSpan],
+            vSpan: [...activeWindow.state.vSpan],
+            lastDirection: activeWindow.state.lastDirection
+          };
+        }
         this.dragSession.lastDragStates = dragStates;
+        this.dragSession.lastDragBeforeStates = beforeStates;
+        this.dragSession.lastDragAffected = dragResult.affected;
         this.dragSession.cancelled = false;
         this.dragSession.floated = false;
         this.dragSession.dndEngaged = true;
@@ -703,6 +724,28 @@ class DynamicTilerExtension {
         // SUCCESSFUL COMMIT: Apply the drag states
         global.log(`[Dynamic Tiler] Committing DnD tiling session for ${Object.keys(session.lastDragStates).length} windows`);
 
+        if (session.lastDragBeforeStates && session.lastDragAffected && session.lastDragAffected.length > 0) {
+          const afterStates: Record<string, WindowState> = {};
+          for (const [id, state] of Object.entries(session.lastDragStates)) {
+            const nextState = state as WindowState;
+            afterStates[id] = {
+              hIndex: nextState.hIndex,
+              vIndex: nextState.vIndex,
+              hSpan: [...nextState.hSpan],
+              vSpan: [...nextState.vSpan],
+              lastDirection: nextState.lastDirection
+            };
+          }
+
+          this.lastDndTransaction = {
+            draggedId: this.draggedWindowId,
+            monitorId: String(activeMonitor.id),
+            beforeStates: session.lastDragBeforeStates,
+            afterStates,
+            affected: [...session.lastDragAffected]
+          };
+        }
+
         // If cross-monitor move: collapse the vacancy on the source monitor first
         if (session.wasTiled && session.sourceMonitor && activeMonitor && session.sourceMonitor.id !== activeMonitor.id) {
           global.log(`[Dynamic Tiler] Cross-monitor drag detected. Collapsing vacancy on source monitor ${session.sourceMonitor.id}`);
@@ -792,7 +835,32 @@ class DynamicTilerExtension {
         }
       }
 
-      const collapsedStates = collapseVacancy(draggedId, config, activeWindowsOnMonitor);
+      let collapsedStates: Record<string, WindowState> | null = null;
+      const transactionMatches =
+        this.lastDndTransaction &&
+        this.lastDndTransaction.draggedId === draggedId &&
+        this.lastDndTransaction.monitorId === String(monitor.id);
+
+      if (transactionMatches) {
+        collapsedStates = restoreDragTransaction(
+          this.lastDndTransaction,
+          draggedId,
+          config,
+          activeWindowsOnMonitor
+        );
+
+        if (collapsedStates) {
+          global.log(`[Dynamic Tiler] Restored DnD transaction neighbors for ${draggedId}`);
+        } else {
+          global.log(`[Dynamic Tiler] DnD transaction restore skipped for ${draggedId}; falling back to vacancy collapse`);
+        }
+
+        this.lastDndTransaction = null;
+      }
+
+      if (!collapsedStates) {
+        collapsedStates = collapseVacancy(draggedId, config, activeWindowsOnMonitor);
+      }
 
       // Physially apply the collapsed geometries with animations to remaining windows
       for (const [id, nextState] of Object.entries(collapsedStates)) {

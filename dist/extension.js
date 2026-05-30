@@ -52,6 +52,7 @@ class DynamicTilerExtension {
     dragSession = null;
     vacancyPreview = null;
     blockedPreview = null;
+    lastDndTransaction = null;
     constructor(metadata) {
         this.metadata = metadata;
         this.shell = new CinnamonAdapters_1.CinnamonShellAdapter(this);
@@ -190,6 +191,8 @@ class DynamicTilerExtension {
                 sourceGeometry: cached ? { ...cached.originalGeometry } : { ...geom },
                 sourceTiledGeometry: cached ? { ...cached.tiledGeometry } : null,
                 lastDragStates: null,
+                lastDragBeforeStates: null,
+                lastDragAffected: [],
                 cancelled: false,
                 floated: false,
                 dndEngaged: false
@@ -388,6 +391,8 @@ class DynamicTilerExtension {
                 if (this.dragSession && (this.dragSession.lastDragStates || (this.dragSession.dndEngaged && !this.dragSession.floated))) {
                     this.clearPreviews();
                     this.dragSession.lastDragStates = null;
+                    this.dragSession.lastDragBeforeStates = null;
+                    this.dragSession.lastDragAffected = [];
                     this.dragSession.floated = this.dragSession.wasTiled === true;
                     this.dragSession.cancelled = !this.dragSession.floated;
                     this.dragSession.dndEngaged = false;
@@ -502,15 +507,18 @@ class DynamicTilerExtension {
                 activeWindows: activeWindowsOnMonitor
             });
             // Calculate the elastic pushes
-            const dragStates = (0, DragTiling_1.calculateDragTransitions)(this.draggedWindowId, dragTarget.targetHSpan, dragTarget.targetVSpan, config, activeWindowsOnMonitor, {
+            const dragResult = (0, DragTiling_1.solveDragTransitions)(this.draggedWindowId, dragTarget.targetHSpan, dragTarget.targetVSpan, config, activeWindowsOnMonitor, {
                 experimentalSwapSameShapeWindows: this.experimentalSwapSameShapeWindows === true,
                 intentPoint: dragTarget.intentPoint
             });
-            if ((0, DragTiling_1.hasLayoutOverlaps)(dragStates)) {
+            const dragStates = dragResult.states;
+            if (dragResult.status === 'blocked') {
                 this.clearPlacementPreviews();
                 this.lastDragStates = null;
                 if (this.dragSession) {
                     this.dragSession.lastDragStates = null;
+                    this.dragSession.lastDragBeforeStates = null;
+                    this.dragSession.lastDragAffected = [];
                     this.dragSession.cancelled = true;
                     this.dragSession.floated = false;
                     this.dragSession.dndEngaged = true;
@@ -533,12 +541,25 @@ class DynamicTilerExtension {
                     }
                 }
                 catch (e) { }
+                global.log(`[Dynamic Tiler] DnD blocked: ${dragResult.reason || 'unknown'}`);
                 return true;
             }
             this.clearBlockedPreview();
             this.lastDragStates = dragStates;
             if (this.dragSession) {
+                const beforeStates = {};
+                for (const activeWindow of activeWindowsOnMonitor) {
+                    beforeStates[activeWindow.windowId] = {
+                        hIndex: activeWindow.state.hIndex,
+                        vIndex: activeWindow.state.vIndex,
+                        hSpan: [...activeWindow.state.hSpan],
+                        vSpan: [...activeWindow.state.vSpan],
+                        lastDirection: activeWindow.state.lastDirection
+                    };
+                }
                 this.dragSession.lastDragStates = dragStates;
+                this.dragSession.lastDragBeforeStates = beforeStates;
+                this.dragSession.lastDragAffected = dragResult.affected;
                 this.dragSession.cancelled = false;
                 this.dragSession.floated = false;
                 this.dragSession.dndEngaged = true;
@@ -636,6 +657,26 @@ class DynamicTilerExtension {
             if (session.lastDragStates) {
                 // SUCCESSFUL COMMIT: Apply the drag states
                 global.log(`[Dynamic Tiler] Committing DnD tiling session for ${Object.keys(session.lastDragStates).length} windows`);
+                if (session.lastDragBeforeStates && session.lastDragAffected && session.lastDragAffected.length > 0) {
+                    const afterStates = {};
+                    for (const [id, state] of Object.entries(session.lastDragStates)) {
+                        const nextState = state;
+                        afterStates[id] = {
+                            hIndex: nextState.hIndex,
+                            vIndex: nextState.vIndex,
+                            hSpan: [...nextState.hSpan],
+                            vSpan: [...nextState.vSpan],
+                            lastDirection: nextState.lastDirection
+                        };
+                    }
+                    this.lastDndTransaction = {
+                        draggedId: this.draggedWindowId,
+                        monitorId: String(activeMonitor.id),
+                        beforeStates: session.lastDragBeforeStates,
+                        afterStates,
+                        affected: [...session.lastDragAffected]
+                    };
+                }
                 // If cross-monitor move: collapse the vacancy on the source monitor first
                 if (session.wasTiled && session.sourceMonitor && activeMonitor && session.sourceMonitor.id !== activeMonitor.id) {
                     global.log(`[Dynamic Tiler] Cross-monitor drag detected. Collapsing vacancy on source monitor ${session.sourceMonitor.id}`);
@@ -717,7 +758,23 @@ class DynamicTilerExtension {
                     }
                 }
             }
-            const collapsedStates = (0, DragTiling_1.collapseVacancy)(draggedId, config, activeWindowsOnMonitor);
+            let collapsedStates = null;
+            const transactionMatches = this.lastDndTransaction &&
+                this.lastDndTransaction.draggedId === draggedId &&
+                this.lastDndTransaction.monitorId === String(monitor.id);
+            if (transactionMatches) {
+                collapsedStates = (0, DragTiling_1.restoreDragTransaction)(this.lastDndTransaction, draggedId, config, activeWindowsOnMonitor);
+                if (collapsedStates) {
+                    global.log(`[Dynamic Tiler] Restored DnD transaction neighbors for ${draggedId}`);
+                }
+                else {
+                    global.log(`[Dynamic Tiler] DnD transaction restore skipped for ${draggedId}; falling back to vacancy collapse`);
+                }
+                this.lastDndTransaction = null;
+            }
+            if (!collapsedStates) {
+                collapsedStates = (0, DragTiling_1.collapseVacancy)(draggedId, config, activeWindowsOnMonitor);
+            }
             // Physially apply the collapsed geometries with animations to remaining windows
             for (const [id, nextState] of Object.entries(collapsedStates)) {
                 try {
