@@ -27,8 +27,8 @@ export class ChainTransitions {
       const siblingSpans = allVisibleSpans.length > 0
         ? allVisibleSpans
         : activeWindows.map(w => ({
-            hSpan: w.state.hSpan || HORIZONTAL_SPANS[w.state.hIndex] || HORIZONTAL_SPANS[5],
-            vSpan: w.state.vSpan || VERTICAL_SPANS[w.state.vIndex] || VERTICAL_SPANS[3]
+            hSpan: w.state.hSpan || HORIZONTAL_SPANS[w.state.hIndex] || [0, config.gridSize],
+            vSpan: w.state.vSpan || VERTICAL_SPANS[w.state.vIndex] || [0, config.gridSize]
           }));
       const defaultState = getDefaultStateFn();
       const nextActiveState = calculateNextStateFn(defaultState, direction, config, siblingSpans);
@@ -39,18 +39,18 @@ export class ChainTransitions {
     // Инициализируем hSpan/vSpan в активном окне, если их нет
     const currentActiveState = { ...activeWin.state };
     if (!currentActiveState.hSpan) {
-      currentActiveState.hSpan = HORIZONTAL_SPANS[currentActiveState.hIndex] || HORIZONTAL_SPANS[5];
+      currentActiveState.hSpan = HORIZONTAL_SPANS[currentActiveState.hIndex] || [0, config.gridSize];
     }
     if (!currentActiveState.vSpan) {
-      currentActiveState.vSpan = VERTICAL_SPANS[currentActiveState.vIndex] || VERTICAL_SPANS[3];
+      currentActiveState.vSpan = VERTICAL_SPANS[currentActiveState.vIndex] || [0, config.gridSize];
     }
 
     // Сиблинги для проверки упора активного окна
     const siblings = activeWindows
       .filter(w => w.windowId !== activeId)
       .map(w => ({
-        hSpan: w.state.hSpan || HORIZONTAL_SPANS[w.state.hIndex] || HORIZONTAL_SPANS[5],
-        vSpan: w.state.vSpan || VERTICAL_SPANS[w.state.vIndex] || VERTICAL_SPANS[3]
+        hSpan: w.state.hSpan || HORIZONTAL_SPANS[w.state.hIndex] || [0, config.gridSize],
+        vSpan: w.state.vSpan || VERTICAL_SPANS[w.state.vIndex] || [0, config.gridSize]
       }));
 
     // 2. Рассчитываем одиночный шаг для активного окна (с передачей соседей для выявления тупиков)
@@ -66,10 +66,10 @@ export class ChainTransitions {
     const normalizedWindows = activeWindows.map(w => {
       const state = { ...w.state };
       if (!state.hSpan) {
-        state.hSpan = HORIZONTAL_SPANS[state.hIndex] || HORIZONTAL_SPANS[5];
+        state.hSpan = HORIZONTAL_SPANS[state.hIndex] || [0, config.gridSize];
       }
       if (!state.vSpan) {
-        state.vSpan = VERTICAL_SPANS[state.vIndex] || VERTICAL_SPANS[5];
+        state.vSpan = VERTICAL_SPANS[state.vIndex] || [0, config.gridSize];
       }
       return { windowId: w.windowId, state };
     });
@@ -89,7 +89,7 @@ export class ChainTransitions {
         return w.windowId === activeId ? [...nextActiveState.hSpan] : [...w.state.hSpan];
       });
 
-      const MIN_WIDTH = 2;
+      const MIN_WIDTH = config.minSpan;
 
       // Распространяем вправо
       for (let i = k + 1; i < N; i++) {
@@ -112,14 +112,16 @@ export class ChainTransitions {
             while (R + 1 < N) {
               const nextStart = sortedWins[R + 1].state.hSpan[0];
               const currEnd = sortedWins[R].state.hSpan[1];
-              if (Math.abs(nextStart - currEnd) === 0) {
+              const overlap = Math.max(sortedWins[R].state.vSpan[0], sortedWins[R + 1].state.vSpan[0]) < 
+                              Math.min(sortedWins[R].state.vSpan[1], sortedWins[R + 1].state.vSpan[1]);
+              if (Math.abs(nextStart - currEnd) === 0 && overlap) {
                 R++;
               } else {
                 break;
               }
             }
             const chainEnd = sortedWins[R].state.hSpan[1];
-            const limitRight = (R + 1 < N) ? sortedWins[R + 1].state.hSpan[0] : 12;
+            const limitRight = (R + 1 < N) ? sortedWins[R + 1].state.hSpan[0] : config.gridSize;
             const freeSpaceRight = limitRight - chainEnd;
             const allowedShift = Math.min(shift, freeSpaceRight);
             newSpans[i][1] = origEnd + allowedShift;
@@ -130,9 +132,9 @@ export class ChainTransitions {
           if (width < MIN_WIDTH) {
             newSpans[i][1] = newSpans[i][0] + MIN_WIDTH;
 
-            if (newSpans[i][1] > 12) {
-              newSpans[i][1] = 12;
-              newSpans[i][0] = 10; // наложение
+            if (newSpans[i][1] > config.gridSize) {
+              newSpans[i][1] = config.gridSize;
+              newSpans[i][0] = config.gridSize - MIN_WIDTH; // наложение
             }
           }
         }
@@ -159,7 +161,9 @@ export class ChainTransitions {
             while (L - 1 >= 0) {
               const prevEnd = sortedWins[L - 1].state.hSpan[1];
               const currStart = sortedWins[L].state.hSpan[0];
-              if (Math.abs(currStart - prevEnd) === 0) {
+              const overlap = Math.max(sortedWins[L].state.vSpan[0], sortedWins[L - 1].state.vSpan[0]) < 
+                              Math.min(sortedWins[L].state.vSpan[1], sortedWins[L - 1].state.vSpan[1]);
+              if (Math.abs(currStart - prevEnd) === 0 && overlap) {
                 L--;
               } else {
                 break;
@@ -179,7 +183,7 @@ export class ChainTransitions {
 
             if (newSpans[i][0] < 0) {
               newSpans[i][0] = 0;
-              newSpans[i][1] = 2; // наложение
+              newSpans[i][1] = MIN_WIDTH; // наложение
             }
           }
         }
@@ -218,7 +222,7 @@ export class ChainTransitions {
         return w.windowId === activeId ? [...nextActiveState.vSpan] : [...w.state.vSpan];
       });
 
-      const MIN_HEIGHT = 2;
+      const MIN_HEIGHT = config.minSpan;
 
       // Распространяем вниз
       for (let i = k + 1; i < N; i++) {
@@ -241,14 +245,16 @@ export class ChainTransitions {
             while (R + 1 < N) {
               const nextStart = sortedWins[R + 1].state.vSpan[0];
               const currEnd = sortedWins[R].state.vSpan[1];
-              if (Math.abs(nextStart - currEnd) === 0) {
+              const overlap = Math.max(sortedWins[R].state.hSpan[0], sortedWins[R + 1].state.hSpan[0]) < 
+                              Math.min(sortedWins[R].state.hSpan[1], sortedWins[R + 1].state.hSpan[1]);
+              if (Math.abs(nextStart - currEnd) === 0 && overlap) {
                 R++;
               } else {
                 break;
               }
             }
             const chainEnd = sortedWins[R].state.vSpan[1];
-            const limitBottom = (R + 1 < N) ? sortedWins[R + 1].state.vSpan[0] : 12;
+            const limitBottom = (R + 1 < N) ? sortedWins[R + 1].state.vSpan[0] : config.gridSize;
             const freeSpaceBottom = limitBottom - chainEnd;
             const allowedShift = Math.min(shift, freeSpaceBottom);
             newSpans[i][1] = origEnd + allowedShift;
@@ -259,9 +265,9 @@ export class ChainTransitions {
           if (height < MIN_HEIGHT) {
             newSpans[i][1] = newSpans[i][0] + MIN_HEIGHT;
 
-            if (newSpans[i][1] > 12) {
-              newSpans[i][1] = 12;
-              newSpans[i][0] = 10; // наложение
+            if (newSpans[i][1] > config.gridSize) {
+              newSpans[i][1] = config.gridSize;
+              newSpans[i][0] = config.gridSize - MIN_HEIGHT; // наложение
             }
           }
         }
@@ -288,7 +294,9 @@ export class ChainTransitions {
             while (L - 1 >= 0) {
               const prevEnd = sortedWins[L - 1].state.vSpan[1];
               const currStart = sortedWins[L].state.vSpan[0];
-              if (Math.abs(currStart - prevEnd) === 0) {
+              const overlap = Math.max(sortedWins[L].state.hSpan[0], sortedWins[L - 1].state.hSpan[0]) < 
+                              Math.min(sortedWins[L].state.hSpan[1], sortedWins[L - 1].state.hSpan[1]);
+              if (Math.abs(currStart - prevEnd) === 0 && overlap) {
                 L--;
               } else {
                 break;
@@ -308,7 +316,7 @@ export class ChainTransitions {
 
             if (newSpans[i][0] < 0) {
               newSpans[i][0] = 0;
-              newSpans[i][1] = 2; // наложение
+              newSpans[i][1] = MIN_HEIGHT; // наложение
             }
           }
         }

@@ -1,3 +1,5 @@
+import { Config } from '../types';
+
 export class InitialLayout {
   /**
    * Находит наиболее подходящий горизонтальный спан для первого тайлинга в зависимости от направления и соседей
@@ -5,12 +7,16 @@ export class InitialLayout {
   public static getInitialHSpan(
     direction: 'left' | 'right' | 'shift-left' | 'shift-right',
     siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
-    fixedVSpan: [number, number] = [0, 12]
+    config: Config,
+    fixedVSpan?: [number, number]
   ): [number, number] {
-    if (direction === 'shift-left') return [0, 6];
-    if (direction === 'shift-right') return [6, 12];
+    const halfGrid = Math.round(config.gridSize / 2);
+    if (direction === 'shift-left') return [0, halfGrid];
+    if (direction === 'shift-right') return [halfGrid, config.gridSize];
 
-    const spans = this.getInitialSpans(direction, siblingSpans, { fixedVSpan });
+    const spans = this.getInitialSpans(direction, siblingSpans, config, { 
+      fixedVSpan: fixedVSpan || [0, config.gridSize] 
+    });
     return spans.hSpan;
   }
 
@@ -20,9 +26,12 @@ export class InitialLayout {
   public static getInitialVSpan(
     direction: 'up' | 'down',
     siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
-    fixedHSpan: [number, number] = [0, 12]
+    config: Config,
+    fixedHSpan?: [number, number]
   ): [number, number] {
-    const spans = this.getInitialSpans(direction, siblingSpans, { fixedHSpan });
+    const spans = this.getInitialSpans(direction, siblingSpans, config, { 
+      fixedHSpan: fixedHSpan || [0, config.gridSize] 
+    });
     return spans.vSpan;
   }
 
@@ -32,33 +41,36 @@ export class InitialLayout {
   public static getInitialSpans(
     direction: 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right',
     siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
+    config: Config,
     options: { fixedHSpan?: [number, number]; fixedVSpan?: [number, number] } = {}
   ): { hSpan: [number, number]; vSpan: [number, number] } {
-    const occupied = Array.from({ length: 12 }, () => new Array(12).fill(false));
+    const occupied = Array.from({ length: config.gridSize }, () => new Array(config.gridSize).fill(false));
     for (const sibling of siblingSpans) {
       const [hStart, hEnd] = sibling.hSpan;
       const [vStart, vEnd] = sibling.vSpan;
       for (let r = vStart; r < vEnd; r++) {
         for (let c = hStart; c < hEnd; c++) {
-          if (r >= 0 && r < 12 && c >= 0 && c < 12) {
+          if (r >= 0 && r < config.gridSize && c >= 0 && c < config.gridSize) {
             occupied[r][c] = true;
           }
         }
       }
     }
 
+    const halfGrid = Math.round(config.gridSize / 2);
+
     if (direction === 'shift-left') {
-      return { hSpan: [0, 6], vSpan: options.fixedVSpan || [0, 12] };
+      return { hSpan: [0, halfGrid], vSpan: options.fixedVSpan || [0, config.gridSize] };
     }
     if (direction === 'shift-right') {
-      return { hSpan: [6, 12], vSpan: options.fixedVSpan || [0, 12] };
+      return { hSpan: [halfGrid, config.gridSize], vSpan: options.fixedVSpan || [0, config.gridSize] };
     }
 
     if (direction === 'left') {
-      let bestHSpan: [number, number] = [0, 6];
-      let bestVSpan: [number, number] = options.fixedVSpan || [0, 12];
+      let bestHSpan: [number, number] = [0, halfGrid];
+      let bestVSpan: [number, number] = options.fixedVSpan || [0, config.gridSize];
 
-      for (let hStart = 0; hStart <= 10; hStart++) {
+      for (let hStart = 0; hStart <= config.gridSize - config.minSpan; hStart++) {
         let maxArea = 0;
         let localBestHSpan: [number, number] | null = null;
         let localBestVSpan: [number, number] | null = null;
@@ -68,16 +80,19 @@ export class InitialLayout {
           : [];
         
         if (!options.fixedVSpan) {
-          for (let vStart = 0; vStart <= 10; vStart += 2) {
-            for (let vEnd = vStart + 2; vEnd <= 12; vEnd += 2) {
+          for (let vStart = 0; vStart <= config.gridSize - config.minSpan; vStart += config.step) {
+            for (let vEnd = vStart + config.minSpan; vEnd <= config.gridSize; vEnd += config.step) {
               vIntervals.push([vStart, vEnd]);
+            }
+            if ((config.gridSize - vStart) >= config.minSpan && (config.gridSize - vStart) % config.step !== 0) {
+              vIntervals.push([vStart, config.gridSize]);
             }
           }
         }
 
         for (const [vStart, vEnd] of vIntervals) {
           let w = 0;
-          while (hStart + w < 12 && w < 6) {
+          while (hStart + w < config.gridSize && w < halfGrid) {
             let colFree = true;
             for (let r = vStart; r < vEnd; r++) {
               if (occupied[r][hStart + w]) {
@@ -92,7 +107,7 @@ export class InitialLayout {
             }
           }
 
-          if (w >= 2) {
+          if (w >= config.minSpan) {
             const area = w * (vEnd - vStart);
             if (area > maxArea || (area === maxArea && w > (localBestHSpan ? (localBestHSpan[1] - localBestHSpan[0]) : 0))) {
               maxArea = area;
@@ -113,10 +128,10 @@ export class InitialLayout {
     }
 
     if (direction === 'right') {
-      let bestHSpan: [number, number] = [6, 12];
-      let bestVSpan: [number, number] = options.fixedVSpan || [0, 12];
+      let bestHSpan: [number, number] = [halfGrid, config.gridSize];
+      let bestVSpan: [number, number] = options.fixedVSpan || [0, config.gridSize];
 
-      for (let hEnd = 12; hEnd >= 2; hEnd--) {
+      for (let hEnd = config.gridSize; hEnd >= config.minSpan; hEnd--) {
         let maxArea = 0;
         let localBestHSpan: [number, number] | null = null;
         let localBestVSpan: [number, number] | null = null;
@@ -126,16 +141,19 @@ export class InitialLayout {
           : [];
         
         if (!options.fixedVSpan) {
-          for (let vStart = 0; vStart <= 10; vStart += 2) {
-            for (let vEnd = vStart + 2; vEnd <= 12; vEnd += 2) {
+          for (let vStart = 0; vStart <= config.gridSize - config.minSpan; vStart += config.step) {
+            for (let vEnd = vStart + config.minSpan; vEnd <= config.gridSize; vEnd += config.step) {
               vIntervals.push([vStart, vEnd]);
+            }
+            if ((config.gridSize - vStart) >= config.minSpan && (config.gridSize - vStart) % config.step !== 0) {
+              vIntervals.push([vStart, config.gridSize]);
             }
           }
         }
 
         for (const [vStart, vEnd] of vIntervals) {
           let w = 0;
-          while (hEnd - 1 - w >= 0 && w < 6) {
+          while (hEnd - 1 - w >= 0 && w < halfGrid) {
             let colFree = true;
             for (let r = vStart; r < vEnd; r++) {
               if (occupied[r][hEnd - 1 - w]) {
@@ -150,7 +168,7 @@ export class InitialLayout {
             }
           }
 
-          if (w >= 2) {
+          if (w >= config.minSpan) {
             const area = w * (vEnd - vStart);
             if (area > maxArea || (area === maxArea && w > (localBestHSpan ? (localBestHSpan[1] - localBestHSpan[0]) : 0))) {
               maxArea = area;
@@ -171,10 +189,10 @@ export class InitialLayout {
     }
 
     if (direction === 'up') {
-      let bestHSpan: [number, number] = options.fixedHSpan || [0, 12];
-      let bestVSpan: [number, number] = [0, 6];
+      let bestHSpan: [number, number] = options.fixedHSpan || [0, config.gridSize];
+      let bestVSpan: [number, number] = [0, halfGrid];
 
-      for (let vStart = 0; vStart <= 10; vStart++) {
+      for (let vStart = 0; vStart <= config.gridSize - config.minSpan; vStart++) {
         let maxArea = 0;
         let localBestHSpan: [number, number] | null = null;
         let localBestVSpan: [number, number] | null = null;
@@ -184,16 +202,19 @@ export class InitialLayout {
           : [];
         
         if (!options.fixedHSpan) {
-          for (let hStart = 0; hStart <= 10; hStart += 2) {
-            for (let hEnd = hStart + 2; hEnd <= 12; hEnd += 2) {
+          for (let hStart = 0; hStart <= config.gridSize - config.minSpan; hStart += config.step) {
+            for (let hEnd = hStart + config.minSpan; hEnd <= config.gridSize; hEnd += config.step) {
               hIntervals.push([hStart, hEnd]);
+            }
+            if ((config.gridSize - hStart) >= config.minSpan && (config.gridSize - hStart) % config.step !== 0) {
+              hIntervals.push([hStart, config.gridSize]);
             }
           }
         }
 
         for (const [hStart, hEnd] of hIntervals) {
           let h = 0;
-          while (vStart + h < 12 && h < 6) {
+          while (vStart + h < config.gridSize && h < halfGrid) {
             let rowFree = true;
             for (let c = hStart; c < hEnd; c++) {
               if (occupied[vStart + h][c]) {
@@ -208,7 +229,7 @@ export class InitialLayout {
             }
           }
 
-          if (h >= 2) {
+          if (h >= config.minSpan) {
             const area = h * (hEnd - hStart);
             if (area > maxArea || (area === maxArea && h > (localBestVSpan ? (localBestVSpan[1] - localBestVSpan[0]) : 0))) {
               maxArea = area;
@@ -229,10 +250,10 @@ export class InitialLayout {
     }
 
     if (direction === 'down') {
-      let bestHSpan: [number, number] = options.fixedHSpan || [0, 12];
-      let bestVSpan: [number, number] = [6, 12];
+      let bestHSpan: [number, number] = options.fixedHSpan || [0, config.gridSize];
+      let bestVSpan: [number, number] = [halfGrid, config.gridSize];
 
-      for (let vEnd = 12; vEnd >= 2; vEnd--) {
+      for (let vEnd = config.gridSize; vEnd >= config.minSpan; vEnd--) {
         let maxArea = 0;
         let localBestHSpan: [number, number] | null = null;
         let localBestVSpan: [number, number] | null = null;
@@ -242,16 +263,19 @@ export class InitialLayout {
           : [];
         
         if (!options.fixedHSpan) {
-          for (let hStart = 0; hStart <= 10; hStart += 2) {
-            for (let hEnd = hStart + 2; hEnd <= 12; hEnd += 2) {
+          for (let hStart = 0; hStart <= config.gridSize - config.minSpan; hStart += config.step) {
+            for (let hEnd = hStart + config.minSpan; hEnd <= config.gridSize; hEnd += config.step) {
               hIntervals.push([hStart, hEnd]);
+            }
+            if ((config.gridSize - hStart) >= config.minSpan && (config.gridSize - hStart) % config.step !== 0) {
+              hIntervals.push([hStart, config.gridSize]);
             }
           }
         }
 
         for (const [hStart, hEnd] of hIntervals) {
           let h = 0;
-          while (vEnd - 1 - h >= 0 && h < 6) {
+          while (vEnd - 1 - h >= 0 && h < halfGrid) {
             let rowFree = true;
             for (let c = hStart; c < hEnd; c++) {
               if (occupied[vEnd - 1 - h][c]) {
@@ -266,7 +290,7 @@ export class InitialLayout {
             }
           }
 
-          if (h >= 2) {
+          if (h >= config.minSpan) {
             const area = h * (hEnd - hStart);
             if (area > maxArea || (area === maxArea && h > (localBestVSpan ? (localBestVSpan[1] - localBestVSpan[0]) : 0))) {
               maxArea = area;
@@ -286,6 +310,6 @@ export class InitialLayout {
       return { hSpan: bestHSpan, vSpan: bestVSpan };
     }
 
-    return { hSpan: [0, 12], vSpan: [0, 12] };
+    return { hSpan: [0, config.gridSize], vSpan: [0, config.gridSize] };
   }
 }

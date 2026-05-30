@@ -5,7 +5,7 @@ class ChainBlockDetector {
     /**
      * Проверяет, заблокирована ли цепочка соприкасающихся окон слева от текущей границы
      */
-    static isLeftChainBlocked(startCol, siblingSpans) {
+    static isLeftChainBlocked(startCol, siblingSpans, config) {
         let currentStart = startCol;
         let chainLength = 0;
         let currentChainWidth = 0;
@@ -21,7 +21,7 @@ class ChainBlockDetector {
         if (chainLength === 0)
             return false;
         const freeSpace = currentStart;
-        const minChainWidth = chainLength * 2;
+        const minChainWidth = chainLength * config.minSpan;
         const compressionReserve = currentChainWidth - minChainWidth;
         const movementReserve = freeSpace + compressionReserve;
         return movementReserve <= 0;
@@ -29,7 +29,7 @@ class ChainBlockDetector {
     /**
      * Проверяет, заблокирована ли цепочка соприкасающихся окон справа от текущей границы
      */
-    static isRightChainBlocked(endCol, siblingSpans) {
+    static isRightChainBlocked(endCol, siblingSpans, config) {
         let currentEnd = endCol;
         let chainLength = 0;
         let currentChainWidth = 0;
@@ -44,8 +44,8 @@ class ChainBlockDetector {
         }
         if (chainLength === 0)
             return false;
-        const freeSpace = 12 - currentEnd;
-        const minChainWidth = chainLength * 2;
+        const freeSpace = config.gridSize - currentEnd;
+        const minChainWidth = chainLength * config.minSpan;
         const compressionReserve = currentChainWidth - minChainWidth;
         const movementReserve = freeSpace + compressionReserve;
         return movementReserve <= 0;
@@ -53,7 +53,7 @@ class ChainBlockDetector {
     /**
      * Проверяет, заблокирована ли цепочка соприкасающихся окон сверху от текущей границы
      */
-    static isTopChainBlocked(startRow, siblingSpans) {
+    static isTopChainBlocked(startRow, siblingSpans, config) {
         let currentStart = startRow;
         let chainLength = 0;
         let currentChainHeight = 0;
@@ -69,7 +69,7 @@ class ChainBlockDetector {
         if (chainLength === 0)
             return false;
         const freeSpace = currentStart;
-        const minChainHeight = chainLength * 2;
+        const minChainHeight = chainLength * config.minSpan;
         const compressionReserve = currentChainHeight - minChainHeight;
         const movementReserve = freeSpace + compressionReserve;
         return movementReserve <= 0;
@@ -77,7 +77,7 @@ class ChainBlockDetector {
     /**
      * Проверяет, заблокирована ли цепочка соприкасающихся окон снизу от текущей границы
      */
-    static isBottomChainBlocked(endRow, siblingSpans) {
+    static isBottomChainBlocked(endRow, siblingSpans, config) {
         let currentEnd = endRow;
         let chainLength = 0;
         let currentChainHeight = 0;
@@ -92,8 +92,8 @@ class ChainBlockDetector {
         }
         if (chainLength === 0)
             return false;
-        const freeSpace = 12 - currentEnd;
-        const minChainHeight = chainLength * 2;
+        const freeSpace = config.gridSize - currentEnd;
+        const minChainHeight = chainLength * config.minSpan;
         const compressionReserve = currentChainHeight - minChainHeight;
         const movementReserve = freeSpace + compressionReserve;
         return movementReserve <= 0;

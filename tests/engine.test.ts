@@ -469,5 +469,77 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(nextState.hSpan).toEqual([0, 6]);
     expect(nextState.vSpan).toEqual([6, 12]);
   });
+
+  test('should rebuild calculations for customizable grid config (e.g. 16x16, step 4, minSpan 4)', () => {
+    const customConfig: Config = {
+      gridSize: 16,
+      minSpan: 4,
+      step: 4,
+      gaps: 0,
+    };
+
+    // 1. Первый тайлинг влево должен занять ровно половину сетки 16 (т.е. 8 колонок)
+    const state1 = TilingEngine.calculateNextState(TilingEngine.getDefaultState(), 'left', customConfig);
+    expect(state1.hSpan).toEqual([0, 8]);
+
+    // 2. Повторное сжатие влево должно сдвинуть границу на шаг 4 (до ширины 4)
+    const state2 = TilingEngine.calculateNextState(state1, 'left', customConfig);
+    expect(state2.hSpan).toEqual([0, 4]);
+
+    // 3. Дальнейшее сжатие должно упереться в minSpan: 4
+    const state3 = TilingEngine.calculateNextState(state2, 'left', customConfig);
+    expect(state3.hSpan).toEqual([0, 4]);
+  });
+
+  test('should support dynamic corner mode resize without jump when both dimensions are compressed', () => {
+    // Окно уже в углу: [0, 6] по горизонтали, [6, 12] по вертикали (обе оси сжаты, меньше 12)
+    const state: WindowState = {
+      hIndex: 0,
+      vIndex: 6,
+      hSpan: [0, 6],
+      vSpan: [6, 12],
+      lastDirection: 'down' // Смена оси произойдет при нажатии 'right'
+    };
+
+    // Нажатие 'right' (смена оси с вертикальной на горизонтальную)
+    // Поскольку обе оси сжаты, мы не должны телепортировать окно вправо, а должны эластично расширить hSpan до [0, 8]!
+    const nextState = TilingEngine.calculateNextState(state, 'right', fakeConfig);
+    expect(nextState.hSpan).toEqual([0, 8]);
+    expect(nextState.vSpan).toEqual([6, 12]); // vSpan остался неизменным
+    expect(nextState.lastDirection).toBe('right');
+  });
+
+  test('should accurately isolate propagation chains for multi-window staircases without vertical overlap', () => {
+    // Три окна:
+    // Окно A (активное): [0, 4] по горизонтали, [0, 6] по вертикали
+    // Окно B: [4, 8] по горизонтали, [0, 6] по вертикали (касается A по X на 4, перекрывается по Y)
+    // Окно C: [8, 12] по горизонтали, [6, 12] по вертикали (касается B по X на 8, но НЕ перекрывается с B по Y: B: 0-6, C: 6-12)
+    const winA = {
+      windowId: 'winA',
+      state: { hIndex: 0, vIndex: 0, hSpan: [0, 4] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: 'left' as const }
+    };
+    const winB = {
+      windowId: 'winB',
+      state: { hIndex: 4, vIndex: 0, hSpan: [4, 8] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: 'right' as const }
+    };
+    const winC = {
+      windowId: 'winC',
+      state: { hIndex: 8, vIndex: 6, hSpan: [8, 12] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: 'right' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'winA',
+      'right',
+      fakeConfig,
+      [winA, winB, winC]
+    );
+
+    // winA расширяется до [0, 6]
+    // winB сдвигается до [6, 8] (сжимается до ширины 2)
+    // winC НЕ ДОЛЖНО быть затронуто, так как между B и C нет пересечения по вертикали!
+    expect(chain['winA'].hSpan).toEqual([0, 6]);
+    expect(chain['winB'].hSpan).toEqual([6, 8]);
+    expect(chain['winC'].hSpan).toEqual([8, 12]);
+  });
 });
 

@@ -71,16 +71,24 @@ export class TilingUseCase {
       if (!cachedWin) continue;
 
       let windowState = { ...cachedWin.state };
-      if (id !== windowId) {
-        try {
-          const currentGeom = this.shell.getWindowGeometry(id);
-          const ext = this.shell.getFrameExtents(id);
-          const currentVisible = {
-            x: currentGeom.x + ext.left,
-            y: currentGeom.y + ext.top,
-            width: currentGeom.width - ext.left - ext.right,
-            height: currentGeom.height - ext.top - ext.bottom,
-          };
+      
+      let currentMonitor = activeMonitor;
+      let currentGeom = cachedWin.tiledGeometry;
+      try {
+        currentGeom = this.shell.getWindowGeometry(id);
+        const ext = this.shell.getFrameExtents(id);
+        const currentVisible = {
+          x: currentGeom.x + ext.left,
+          y: currentGeom.y + ext.top,
+          width: currentGeom.width - ext.left - ext.right,
+          height: currentGeom.height - ext.top - ext.bottom,
+        };
+        currentMonitor = this.shell.findMonitorForWindow(currentVisible, monitors);
+
+        if (id !== windowId) {
+          if (currentMonitor.id !== activeMonitor.id) {
+            continue;
+          }
 
           const diffX = Math.abs(currentVisible.x - cachedWin.tiledGeometry.x);
           const diffY = Math.abs(currentVisible.y - cachedWin.tiledGeometry.y);
@@ -89,8 +97,8 @@ export class TilingUseCase {
 
           const THRESHOLD = 80;
           if (diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD) {
-            const hSpan = TilingEngine.geometryToHSpan(currentVisible, activeMonitor);
-            const vSpan = TilingEngine.geometryToVSpan(currentVisible, activeMonitor);
+            const hSpan = TilingEngine.geometryToHSpan(currentVisible, currentMonitor, config);
+            const vSpan = TilingEngine.geometryToVSpan(currentVisible, currentMonitor, config);
             
             windowState = {
               ...cachedWin.state,
@@ -102,13 +110,18 @@ export class TilingUseCase {
             
             this.cache.saveState(id, windowState, currentVisible, cachedWin.originalGeometry || currentGeom);
           }
-        } catch {
-          // Игнорируем ошибки при получении геометрии соседа
+        }
+      } catch {
+        currentMonitor = this.shell.findMonitorForWindow(cachedWin.tiledGeometry, monitors);
+        if (id !== windowId && currentMonitor.id !== activeMonitor.id) {
+          continue;
         }
       }
 
-      const monitor = this.shell.findMonitorForWindow(cachedWin.tiledGeometry, monitors);
-      if (monitor.id !== activeMonitor.id) continue;
+      if (id === windowId) {
+        const monitor = this.shell.findMonitorForWindow(cachedWin.tiledGeometry, monitors);
+        if (monitor.id !== activeMonitor.id) continue;
+      }
 
       const isOldStateSchema = typeof (windowState as any).hIndex !== 'number' || typeof (windowState as any).vIndex !== 'number';
       if (isOldStateSchema) continue;

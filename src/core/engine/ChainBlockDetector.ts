@@ -1,8 +1,10 @@
+import { Config } from '../types';
+
 export class ChainBlockDetector {
   /**
    * Проверяет, заблокирована ли цепочка соприкасающихся окон слева от текущей границы
    */
-  public static isLeftChainBlocked(startCol: number, siblingSpans: { hSpan: [number, number] }[]): boolean {
+  public static isLeftChainBlocked(startCol: number, siblingSpans: { hSpan: [number, number] }[], config: Config): boolean {
     let currentStart = startCol;
     let chainLength = 0;
     let currentChainWidth = 0;
@@ -20,7 +22,7 @@ export class ChainBlockDetector {
     if (chainLength === 0) return false;
 
     const freeSpace = currentStart;
-    const minChainWidth = chainLength * 2;
+    const minChainWidth = chainLength * config.minSpan;
     const compressionReserve = currentChainWidth - minChainWidth;
     const movementReserve = freeSpace + compressionReserve;
 
@@ -30,7 +32,7 @@ export class ChainBlockDetector {
   /**
    * Проверяет, заблокирована ли цепочка соприкасающихся окон справа от текущей границы
    */
-  public static isRightChainBlocked(endCol: number, siblingSpans: { hSpan: [number, number] }[]): boolean {
+  public static isRightChainBlocked(endCol: number, siblingSpans: { hSpan: [number, number] }[], config: Config): boolean {
     let currentEnd = endCol;
     let chainLength = 0;
     let currentChainWidth = 0;
@@ -47,8 +49,8 @@ export class ChainBlockDetector {
 
     if (chainLength === 0) return false;
 
-    const freeSpace = 12 - currentEnd;
-    const minChainWidth = chainLength * 2;
+    const freeSpace = config.gridSize - currentEnd;
+    const minChainWidth = chainLength * config.minSpan;
     const compressionReserve = currentChainWidth - minChainWidth;
     const movementReserve = freeSpace + compressionReserve;
 
@@ -58,7 +60,7 @@ export class ChainBlockDetector {
   /**
    * Проверяет, заблокирована ли цепочка соприкасающихся окон сверху от текущей границы
    */
-  public static isTopChainBlocked(startRow: number, siblingSpans: { vSpan: [number, number] }[]): boolean {
+  public static isTopChainBlocked(startRow: number, siblingSpans: { vSpan: [number, number] }[], config: Config): boolean {
     let currentStart = startRow;
     let chainLength = 0;
     let currentChainHeight = 0;
@@ -76,7 +78,7 @@ export class ChainBlockDetector {
     if (chainLength === 0) return false;
 
     const freeSpace = currentStart;
-    const minChainHeight = chainLength * 2;
+    const minChainHeight = chainLength * config.minSpan;
     const compressionReserve = currentChainHeight - minChainHeight;
     const movementReserve = freeSpace + compressionReserve;
 
@@ -86,7 +88,7 @@ export class ChainBlockDetector {
   /**
    * Проверяет, заблокирована ли цепочка соприкасающихся окон снизу от текущей границы
    */
-  public static isBottomChainBlocked(endRow: number, siblingSpans: { vSpan: [number, number] }[]): boolean {
+  public static isBottomChainBlocked(endRow: number, siblingSpans: { vSpan: [number, number] }[], config: Config): boolean {
     let currentEnd = endRow;
     let chainLength = 0;
     let currentChainHeight = 0;
@@ -103,8 +105,8 @@ export class ChainBlockDetector {
 
     if (chainLength === 0) return false;
 
-    const freeSpace = 12 - currentEnd;
-    const minChainHeight = chainLength * 2;
+    const freeSpace = config.gridSize - currentEnd;
+    const minChainHeight = chainLength * config.minSpan;
     const compressionReserve = currentChainHeight - minChainHeight;
     const movementReserve = freeSpace + compressionReserve;
 

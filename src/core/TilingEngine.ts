@@ -27,9 +27,10 @@ export class TilingEngine {
   public static getInitialHSpan(
     direction: 'left' | 'right' | 'shift-left' | 'shift-right',
     siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
+    config: Config,
     fixedVSpan?: [number, number]
   ): [number, number] {
-    return InitialLayout.getInitialHSpan(direction, siblingSpans, fixedVSpan);
+    return InitialLayout.getInitialHSpan(direction, siblingSpans, config, fixedVSpan);
   }
 
   /**
@@ -38,9 +39,10 @@ export class TilingEngine {
   public static getInitialVSpan(
     direction: 'up' | 'down',
     siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
+    config: Config,
     fixedHSpan?: [number, number]
   ): [number, number] {
-    return InitialLayout.getInitialVSpan(direction, siblingSpans, fixedHSpan);
+    return InitialLayout.getInitialVSpan(direction, siblingSpans, config, fixedHSpan);
   }
 
   /**
@@ -56,17 +58,19 @@ export class TilingEngine {
 
     // Если hSpan/vSpan не инициализированы, берем их на основе индексов
     if (!nextState.hSpan) {
-      nextState.hSpan = HORIZONTAL_SPANS[nextState.hIndex] || HORIZONTAL_SPANS[5];
+      nextState.hSpan = HORIZONTAL_SPANS[nextState.hIndex] || [0, config.gridSize];
     }
     if (!nextState.vSpan) {
-      nextState.vSpan = VERTICAL_SPANS[nextState.vIndex] || VERTICAL_SPANS[5];
+      nextState.vSpan = VERTICAL_SPANS[nextState.vIndex] || [0, config.gridSize];
     }
+
+    const halfGrid = Math.round(config.gridSize / 2);
 
     if (currentState.lastDirection === null) {
       // Первый тайлинг окна
       switch (direction) {
         case 'left': {
-          const spans = InitialLayout.getInitialSpans('left', siblingSpans);
+          const spans = InitialLayout.getInitialSpans('left', siblingSpans, config);
           nextState.hSpan = spans.hSpan;
           nextState.vSpan = spans.vSpan;
           nextState.hIndex = this.spanToHIndex(nextState.hSpan);
@@ -76,17 +80,17 @@ export class TilingEngine {
         }
 
         case 'right': {
-          const spans = InitialLayout.getInitialSpans('right', siblingSpans);
+          const spans = InitialLayout.getInitialSpans('right', siblingSpans, config);
           nextState.hSpan = spans.hSpan;
           nextState.vSpan = spans.vSpan;
           nextState.hIndex = this.spanToHIndex(nextState.hSpan);
           nextState.vIndex = this.spanToVIndex(nextState.vSpan);
-          nextState.lastDirection = nextState.hSpan[1] < 12 ? 'left' : 'right';
+          nextState.lastDirection = nextState.hSpan[1] < config.gridSize ? 'left' : 'right';
           break;
         }
 
         case 'up': {
-          const spans = InitialLayout.getInitialSpans('up', siblingSpans);
+          const spans = InitialLayout.getInitialSpans('up', siblingSpans, config);
           nextState.hSpan = spans.hSpan;
           nextState.vSpan = spans.vSpan;
           nextState.hIndex = this.spanToHIndex(nextState.hSpan);
@@ -96,28 +100,28 @@ export class TilingEngine {
         }
 
         case 'down': {
-          const spans = InitialLayout.getInitialSpans('down', siblingSpans);
+          const spans = InitialLayout.getInitialSpans('down', siblingSpans, config);
           nextState.hSpan = spans.hSpan;
           nextState.vSpan = spans.vSpan;
           nextState.hIndex = this.spanToHIndex(nextState.hSpan);
           nextState.vIndex = this.spanToVIndex(nextState.vSpan);
-          nextState.lastDirection = nextState.vSpan[1] < 12 ? 'up' : 'down';
+          nextState.lastDirection = nextState.vSpan[1] < config.gridSize ? 'up' : 'down';
           break;
         }
 
         case 'shift-left':
-          nextState.hSpan = [0, 6];
-          nextState.vSpan = [0, 12];
-          nextState.hIndex = 2;
-          nextState.vIndex = 5;
+          nextState.hSpan = [0, halfGrid];
+          nextState.vSpan = [0, config.gridSize];
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
           nextState.lastDirection = 'shift-left';
           break;
 
         case 'shift-right':
-          nextState.hSpan = [6, 12];
-          nextState.vSpan = [0, 12];
-          nextState.hIndex = 8;
-          nextState.vIndex = 5;
+          nextState.hSpan = [halfGrid, config.gridSize];
+          nextState.vSpan = [0, config.gridSize];
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
           nextState.lastDirection = 'shift-right';
           break;
       }
@@ -129,22 +133,29 @@ export class TilingEngine {
       const isHorizontalNew = direction === 'left' || direction === 'right' || direction === 'shift-left' || direction === 'shift-right';
       const isVerticalNew = direction === 'up' || direction === 'down';
 
-      if (isHorizontalOld && isVerticalNew) {
-        nextState.hSpan = currentState.hSpan;
-        nextState.hIndex = currentState.hIndex;
-        nextState.vSpan = this.getInitialVSpan(direction as 'up' | 'down', siblingSpans, currentState.hSpan);
-        nextState.vIndex = this.spanToVIndex(nextState.vSpan);
-        nextState.lastDirection = direction;
-        return nextState;
-      }
+      // Если обе оси уже не full, Corner Mode переключается в "эластичный ресайз внутри угла"
+      const isBothSpansCompressed = 
+        (currentState.hSpan[1] - currentState.hSpan[0] < config.gridSize) &&
+        (currentState.vSpan[1] - currentState.vSpan[0] < config.gridSize);
 
-      if (isVerticalOld && isHorizontalNew) {
-        nextState.vSpan = currentState.vSpan;
-        nextState.vIndex = currentState.vIndex;
-        nextState.hSpan = this.getInitialHSpan(direction as 'left' | 'right' | 'shift-left' | 'shift-right', siblingSpans, currentState.vSpan);
-        nextState.hIndex = this.spanToHIndex(nextState.hSpan);
-        nextState.lastDirection = direction;
-        return nextState;
+      if (!isBothSpansCompressed) {
+        if (isHorizontalOld && isVerticalNew) {
+          nextState.hSpan = currentState.hSpan;
+          nextState.hIndex = currentState.hIndex;
+          nextState.vSpan = this.getInitialVSpan(direction as 'up' | 'down', siblingSpans, config, currentState.hSpan);
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
+          nextState.lastDirection = direction;
+          return nextState;
+        }
+
+        if (isVerticalOld && isHorizontalNew) {
+          nextState.vSpan = currentState.vSpan;
+          nextState.vIndex = currentState.vIndex;
+          nextState.hSpan = this.getInitialHSpan(direction as 'left' | 'right' | 'shift-left' | 'shift-right', siblingSpans, config, currentState.vSpan);
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
+          nextState.lastDirection = direction;
+          return nextState;
+        }
       }
 
       // Окно уже в режиме тайлинга
@@ -155,19 +166,19 @@ export class TilingEngine {
           let newEnd = end;
 
           if (start > 0) {
-            newStart = Math.max(0, start - 2);
+            newStart = Math.max(0, start - config.step);
           } else {
-            newEnd = Math.max(2, end - 2);
+            newEnd = Math.max(config.minSpan, end - config.step);
           }
           const targetSpan: [number, number] = [newStart, newEnd];
-          const leftCollision = targetSpan[0] < currentState.hSpan[0] && ChainBlockDetector.isLeftChainBlocked(currentState.hSpan[0], siblingSpans);
+          const leftCollision = targetSpan[0] < currentState.hSpan[0] && ChainBlockDetector.isLeftChainBlocked(currentState.hSpan[0], siblingSpans, config);
 
           if (leftCollision) {
             const currentStart = currentState.hSpan[0];
             const currentEnd = currentState.hSpan[1];
             const currentWidth = currentEnd - currentStart;
-            let nextWidth = currentWidth > 6 ? 6 : 2;
-            if (currentWidth <= 2) nextWidth = 2;
+            let nextWidth = currentWidth > halfGrid ? halfGrid : config.minSpan;
+            if (currentWidth <= config.minSpan) nextWidth = config.minSpan;
             nextState.hSpan = [currentStart, currentStart + nextWidth];
           } else {
             nextState.hSpan = targetSpan;
@@ -182,20 +193,20 @@ export class TilingEngine {
           let newStart = start;
           let newEnd = end;
 
-          if (end < 12) {
-            newEnd = Math.min(12, end + 2);
+          if (end < config.gridSize) {
+            newEnd = Math.min(config.gridSize, end + config.step);
           } else {
-            newStart = Math.min(10, start + 2);
+            newStart = Math.min(config.gridSize - config.minSpan, start + config.step);
           }
           const targetSpan: [number, number] = [newStart, newEnd];
-          const rightCollision = targetSpan[1] > currentState.hSpan[1] && ChainBlockDetector.isRightChainBlocked(currentState.hSpan[1], siblingSpans);
+          const rightCollision = targetSpan[1] > currentState.hSpan[1] && ChainBlockDetector.isRightChainBlocked(currentState.hSpan[1], siblingSpans, config);
 
           if (rightCollision) {
             const currentStart = currentState.hSpan[0];
             const currentEnd = currentState.hSpan[1];
             const currentWidth = currentEnd - currentStart;
-            let nextWidth = currentWidth > 6 ? 6 : 2;
-            if (currentWidth <= 2) nextWidth = 2;
+            let nextWidth = currentWidth > halfGrid ? halfGrid : config.minSpan;
+            if (currentWidth <= config.minSpan) nextWidth = config.minSpan;
             nextState.hSpan = [currentEnd - nextWidth, currentEnd];
           } else {
             nextState.hSpan = targetSpan;
@@ -211,19 +222,19 @@ export class TilingEngine {
           let newEnd = end;
 
           if (start > 0) {
-            newStart = Math.max(0, start - 2);
+            newStart = Math.max(0, start - config.step);
           } else {
-            newEnd = Math.max(2, end - 2);
+            newEnd = Math.max(config.minSpan, end - config.step);
           }
           const targetSpan: [number, number] = [newStart, newEnd];
-          const topCollision = targetSpan[0] < currentState.vSpan[0] && ChainBlockDetector.isTopChainBlocked(currentState.vSpan[0], siblingSpans);
+          const topCollision = targetSpan[0] < currentState.vSpan[0] && ChainBlockDetector.isTopChainBlocked(currentState.vSpan[0], siblingSpans, config);
 
           if (topCollision) {
             const currentStart = currentState.vSpan[0];
             const currentEnd = currentState.vSpan[1];
             const currentHeight = currentEnd - currentStart;
-            let nextHeight = currentHeight > 6 ? 6 : 2;
-            if (currentHeight <= 2) nextHeight = 2;
+            let nextHeight = currentHeight > halfGrid ? halfGrid : config.minSpan;
+            if (currentHeight <= config.minSpan) nextHeight = config.minSpan;
             nextState.vSpan = [currentStart, currentStart + nextHeight];
           } else {
             nextState.vSpan = targetSpan;
@@ -238,20 +249,20 @@ export class TilingEngine {
           let newStart = start;
           let newEnd = end;
 
-          if (end < 12) {
-            newEnd = Math.min(12, end + 2);
+          if (end < config.gridSize) {
+            newEnd = Math.min(config.gridSize, end + config.step);
           } else {
-            newStart = Math.min(10, start + 2);
+            newStart = Math.min(config.gridSize - config.minSpan, start + config.step);
           }
           const targetSpan: [number, number] = [newStart, newEnd];
-          const bottomCollision = targetSpan[1] > currentState.vSpan[1] && ChainBlockDetector.isBottomChainBlocked(currentState.vSpan[1], siblingSpans);
+          const bottomCollision = targetSpan[1] > currentState.vSpan[1] && ChainBlockDetector.isBottomChainBlocked(currentState.vSpan[1], siblingSpans, config);
 
           if (bottomCollision) {
             const currentStart = currentState.vSpan[0];
             const currentEnd = currentState.vSpan[1];
             const currentHeight = currentEnd - currentStart;
-            let nextHeight = currentHeight > 6 ? 6 : 2;
-            if (currentHeight <= 2) nextHeight = 2;
+            let nextHeight = currentHeight > halfGrid ? halfGrid : config.minSpan;
+            if (currentHeight <= config.minSpan) nextHeight = config.minSpan;
             nextState.vSpan = [currentEnd - nextHeight, currentEnd];
           } else {
             nextState.vSpan = targetSpan;
@@ -262,14 +273,14 @@ export class TilingEngine {
         }
 
         case 'shift-left':
-          nextState.hSpan = [0, 6];
-          nextState.hIndex = 1;
+          nextState.hSpan = [0, halfGrid];
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
           nextState.lastDirection = 'shift-left';
           break;
 
         case 'shift-right':
-          nextState.hSpan = [6, 12];
-          nextState.hIndex = 8;
+          nextState.hSpan = [halfGrid, config.gridSize];
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
           nextState.lastDirection = 'shift-right';
           break;
       }
@@ -307,12 +318,12 @@ export class TilingEngine {
     return spanToVIndex(span);
   }
 
-  public static geometryToHSpan(geom: Geometry, monitor: ScreenInfo): [number, number] {
-    return GeometryConverter.geometryToHSpan(geom, monitor);
+  public static geometryToHSpan(geom: Geometry, monitor: ScreenInfo, config?: Config): [number, number] {
+    return GeometryConverter.geometryToHSpan(geom, monitor, config);
   }
 
-  public static geometryToVSpan(geom: Geometry, monitor: ScreenInfo): [number, number] {
-    return GeometryConverter.geometryToVSpan(geom, monitor);
+  public static geometryToVSpan(geom: Geometry, monitor: ScreenInfo, config?: Config): [number, number] {
+    return GeometryConverter.geometryToVSpan(geom, monitor, config);
   }
 
   public static stateToGeometry(state: WindowState, screen: ScreenInfo, config: Config): Geometry {
