@@ -286,6 +286,57 @@ function getAffectedWindowIds(
     .sort((a, b) => a.localeCompare(b));
 }
 
+function spanSize(span: [number, number]): number {
+  return span[1] - span[0];
+}
+
+function stateArea(state: WindowState): number {
+  return spanSize(state.hSpan) * spanSize(state.vSpan);
+}
+
+function stateDelta(previous: WindowState, next: WindowState): number {
+  return Math.abs(previous.hSpan[0] - next.hSpan[0]) +
+    Math.abs(previous.hSpan[1] - next.hSpan[1]) +
+    Math.abs(previous.vSpan[0] - next.vSpan[0]) +
+    Math.abs(previous.vSpan[1] - next.vSpan[1]);
+}
+
+function scoreDragLayoutCandidate(
+  states: Record<string, WindowState>,
+  config: Config,
+  activeWindows: { windowId: string; state: WindowState }[],
+  draggedId: string,
+  order: number = 0
+): number {
+  const reason = getDragBlockReason(states, config);
+  const invalidPenalty =
+    reason === 'outOfBounds' ? 1_000_000_000 :
+    reason === 'tooSmall' ? 900_000_000 :
+    reason === 'wouldOverlap' ? 800_000_000 :
+    0;
+  const originalStates = new Map(activeWindows.map(w => [w.windowId, w.state]));
+  const affected = getAffectedWindowIds(states, activeWindows);
+  let score = invalidPenalty + affected.length * 10_000 + order / 1_000;
+
+  for (const id of affected) {
+    const previous = originalStates.get(id);
+    const next = states[id];
+    if (!next) continue;
+
+    if (!previous) {
+      score += id === draggedId ? 0 : 50_000;
+      continue;
+    }
+
+    const isDragged = id === draggedId;
+    const movement = stateDelta(previous, next);
+    const areaDelta = Math.abs(stateArea(previous) - stateArea(next));
+    score += (isDragged ? 0 : 1_000) + movement * (isDragged ? 5 : 100) + areaDelta * (isDragged ? 2 : 25);
+  }
+
+  return score;
+}
+
 export function computeDragTarget(input: DragTargetInput): DragTargetResult {
   const { draggedId, mx, my, monitor, config, activeWindows } = input;
   const { workarea } = monitor;
@@ -793,6 +844,28 @@ export function calculateDragTransitions(
     touched.add(id);
   };
 
+  const cloneStates = (source: Record<string, WindowState>): Record<string, WindowState> => {
+    const cloned: Record<string, WindowState> = {};
+    for (const [id, state] of Object.entries(source)) {
+      cloned[id] = cloneState(state);
+    }
+    return cloned;
+  };
+
+  const scoreCandidateStates = (
+    candidateStates: Record<string, WindowState>,
+    order: number = 0
+  ): number => scoreDragLayoutCandidate(candidateStates, config, activeWindows, draggedId, order);
+
+  const applyCandidateStates = (candidateStates: Record<string, WindowState>) => {
+    for (const [id, nextState] of Object.entries(candidateStates)) {
+      if (!states[id] || !statesEqual(states[id], nextState)) {
+        states[id] = cloneState(nextState);
+        touched.add(id);
+      }
+    }
+  };
+
   const rectsOverlap = (a: WindowState, b: WindowState) => {
     return hasHorizontalOverlap(a.hSpan, b.hSpan) && hasVerticalOverlap(a.vSpan, b.vSpan);
   };
@@ -908,13 +981,33 @@ export function calculateDragTransitions(
   };
 
   const carveAwayFromTarget = (id: string): boolean => {
-    const candidate = getCarveCandidatesAwayFromTarget(id)[0];
-    if (!candidate) return false;
+    const candidates = getCarveCandidatesAwayFromTarget(id);
+    let bestCandidate: CarveCandidate | null = null;
+    let bestScore = Number.POSITIVE_INFINITY;
 
-    if (candidate.axis === 'horizontal') {
-      setHSpan(id, candidate.span);
+    for (const [index, candidate] of candidates.entries()) {
+      const candidateStates = cloneStates(states);
+      if (candidate.axis === 'horizontal') {
+        candidateStates[id].hSpan = [...candidate.span];
+        candidateStates[id].hIndex = TilingEngine.spanToHIndex(candidate.span);
+      } else {
+        candidateStates[id].vSpan = [...candidate.span];
+        candidateStates[id].vIndex = TilingEngine.spanToVIndex(candidate.span);
+      }
+
+      const score = scoreCandidateStates(candidateStates, index) + candidate.score / 1_000;
+      if (score < bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+      }
+    }
+
+    if (!bestCandidate) return false;
+
+    if (bestCandidate.axis === 'horizontal') {
+      setHSpan(id, bestCandidate.span);
     } else {
-      setVSpan(id, candidate.span);
+      setVSpan(id, bestCandidate.span);
     }
     return true;
   };
@@ -1179,13 +1272,13 @@ export function calculateDragTransitions(
       return null;
     };
 
-    for (const candidateHSpan of candidateHSpans) {
+    let bestStates: Record<string, WindowState> | null = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (const [index, candidateHSpan] of candidateHSpans.entries()) {
       if (candidateHSpan[0] < 0 || candidateHSpan[1] > config.gridSize) continue;
 
-      const candidateStates: Record<string, WindowState> = {};
-      for (const [id, state] of Object.entries(states)) {
-        candidateStates[id] = cloneState(state);
-      }
+      const candidateStates = cloneStates(states);
 
       for (const stackId of stackIds) {
         candidateStates[stackId].hSpan = [...candidateHSpan];
@@ -1210,13 +1303,15 @@ export function calculateDragTransitions(
         continue;
       }
 
-      for (const [id, nextState] of Object.entries(candidateStates)) {
-        if (!statesEqual(states[id], nextState)) {
-          states[id] = cloneState(nextState);
-          touched.add(id);
-        }
+      const score = scoreCandidateStates(candidateStates, index);
+      if (score < bestScore) {
+        bestScore = score;
+        bestStates = candidateStates;
       }
+    }
 
+    if (bestStates) {
+      applyCandidateStates(bestStates);
       return true;
     }
 
@@ -1269,11 +1364,11 @@ export function calculateDragTransitions(
       shifts.push(targetCenter >= rowCenter ? targetWidth : -targetWidth);
     }
 
-    for (const shift of shifts) {
-      const candidateStates: Record<string, WindowState> = {};
-      for (const [id, state] of Object.entries(states)) {
-        candidateStates[id] = cloneState(state);
-      }
+    let bestStates: Record<string, WindowState> | null = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (const [index, shift] of shifts.entries()) {
+      const candidateStates = cloneStates(states);
 
       let failed = false;
       for (const rowId of rowIds) {
@@ -1292,13 +1387,15 @@ export function calculateDragTransitions(
         continue;
       }
 
-      for (const [id, nextState] of Object.entries(candidateStates)) {
-        if (!statesEqual(states[id], nextState)) {
-          states[id] = cloneState(nextState);
-          touched.add(id);
-        }
+      const score = scoreCandidateStates(candidateStates, index);
+      if (score < bestScore) {
+        bestScore = score;
+        bestStates = candidateStates;
       }
+    }
 
+    if (bestStates) {
+      applyCandidateStates(bestStates);
       return true;
     }
 

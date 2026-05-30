@@ -30,6 +30,74 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       .map(([id, state]) => [id, { hSpan: state.hSpan, vSpan: state.vSpan }])
   );
 
+  const expectLayoutInvariants = (
+    states: Record<string, WindowState>,
+    config: Config = fakeConfig
+  ) => {
+    expect(hasLayoutOverlaps(states)).toBe(false);
+
+    for (const state of Object.values(states)) {
+      expect(state.hSpan[0]).toBeGreaterThanOrEqual(0);
+      expect(state.vSpan[0]).toBeGreaterThanOrEqual(0);
+      expect(state.hSpan[1]).toBeLessThanOrEqual(config.gridSize);
+      expect(state.vSpan[1]).toBeLessThanOrEqual(config.gridSize);
+      expect(state.hSpan[1] - state.hSpan[0]).toBeGreaterThanOrEqual(config.minSpan);
+      expect(state.vSpan[1] - state.vSpan[0]).toBeGreaterThanOrEqual(config.minSpan);
+    }
+  };
+
+  const makeRng = (seed: number) => {
+    let value = seed >>> 0;
+    return () => {
+      value = (value * 1664525 + 1013904223) >>> 0;
+      return value / 0x100000000;
+    };
+  };
+
+  const pick = <T,>(items: T[], rng: () => number): T => items[Math.floor(rng() * items.length) % items.length];
+
+  const makeFuzzLayout = (seed: number): { windowId: string; state: WindowState }[] => {
+    const rng = makeRng(seed);
+    const layouts = [
+      [2, 2, 4, 4],
+      [2, 3, 3, 4],
+      [2, 2, 2, 6],
+      [3, 3, 6],
+      [4, 4, 4]
+    ];
+    const widths = pick(layouts, rng);
+    const windows: { windowId: string; state: WindowState }[] = [];
+    let hCursor = 0;
+
+    widths.forEach((width, columnIndex) => {
+      const canStack = width <= 3 || rng() > 0.45;
+      const stackCount = canStack ? pick([1, 1, 2, 3], rng) : 1;
+      const baseHeight = Math.floor(fakeConfig.gridSize / stackCount);
+      let vCursor = 0;
+
+      for (let slot = 0; slot < stackCount; slot++) {
+        const height = slot === stackCount - 1 ? fakeConfig.gridSize - vCursor : baseHeight;
+        const hSpan: [number, number] = [hCursor, hCursor + width];
+        const vSpan: [number, number] = [vCursor, vCursor + height];
+        windows.push({
+          windowId: `seed-${seed}-c${columnIndex}-s${slot}`,
+          state: {
+            hIndex: TilingEngine.spanToHIndex(hSpan),
+            vIndex: TilingEngine.spanToVIndex(vSpan),
+            hSpan,
+            vSpan,
+            lastDirection: null
+          }
+        });
+        vCursor += height;
+      }
+
+      hCursor += width;
+    });
+
+    return windows;
+  };
+
   const deterministicPermutations = <T,>(items: T[]): T[][] => [
     [...items].reverse(),
     [...items.slice(1), items[0]],
@@ -2410,6 +2478,61 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       [4, 6],
       [0, 3]
     );
+  });
+
+  test('DnD property fuzz should keep valid solves inside the grid without overlaps', () => {
+    for (let seed = 1; seed <= 48; seed++) {
+      const activeWindows = makeFuzzLayout(seed);
+      expectLayoutInvariants(Object.fromEntries(activeWindows.map(w => [w.windowId, w.state])));
+
+      const rng = makeRng(seed * 17);
+      const width = pick([2, 2, 3, 4], rng);
+      const height = pick([2, 4, 6, 12], rng);
+      const hStart = Math.min(fakeConfig.gridSize - width, Math.floor(rng() * (fakeConfig.gridSize - width + 1)));
+      const vStart = Math.min(fakeConfig.gridSize - height, Math.floor(rng() * (fakeConfig.gridSize - height + 1)));
+      const targetHSpan: [number, number] = [hStart, hStart + width];
+      const targetVSpan: [number, number] = [vStart, vStart + height];
+      const result = solveDragTransitions(
+        `dragged-${seed}`,
+        targetHSpan,
+        targetVSpan,
+        fakeConfig,
+        activeWindows,
+        {
+          intentPoint: { h: hStart + width / 2, v: vStart + height / 2 },
+          preferredWidth: width
+        }
+      );
+
+      if (result.status === 'valid') {
+        expectLayoutInvariants(result.states);
+        expect(result.states[`dragged-${seed}`]).toBeDefined();
+      } else {
+        expect(result.reason).toBeDefined();
+      }
+    }
+  });
+
+  test('DnD property fuzz should be deterministic across active window ordering', () => {
+    for (let seed = 101; seed <= 124; seed++) {
+      const activeWindows = makeFuzzLayout(seed);
+      const rng = makeRng(seed * 23);
+      const width = pick([2, 3, 4], rng);
+      const height = pick([3, 6, 12], rng);
+      const hStart = Math.min(fakeConfig.gridSize - width, Math.floor(rng() * (fakeConfig.gridSize - width + 1)));
+      const vStart = Math.min(fakeConfig.gridSize - height, Math.floor(rng() * (fakeConfig.gridSize - height + 1)));
+
+      expectStableDnDResultAcrossPermutations(
+        activeWindows,
+        `dragged-${seed}`,
+        [hStart, hStart + width],
+        [vStart, vStart + height],
+        {
+          intentPoint: { h: hStart + width / 2, v: vStart + height / 2 },
+          preferredWidth: width
+        }
+      );
+    }
   });
 
   test('DnD transaction restore should give a carved neighbor its previous space when the inserted window is extracted', () => {

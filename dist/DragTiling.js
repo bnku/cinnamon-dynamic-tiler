@@ -142,6 +142,43 @@ function getAffectedWindowIds(states, activeWindows) {
     })
         .sort((a, b) => a.localeCompare(b));
 }
+function spanSize(span) {
+    return span[1] - span[0];
+}
+function stateArea(state) {
+    return spanSize(state.hSpan) * spanSize(state.vSpan);
+}
+function stateDelta(previous, next) {
+    return Math.abs(previous.hSpan[0] - next.hSpan[0]) +
+        Math.abs(previous.hSpan[1] - next.hSpan[1]) +
+        Math.abs(previous.vSpan[0] - next.vSpan[0]) +
+        Math.abs(previous.vSpan[1] - next.vSpan[1]);
+}
+function scoreDragLayoutCandidate(states, config, activeWindows, draggedId, order = 0) {
+    const reason = getDragBlockReason(states, config);
+    const invalidPenalty = reason === 'outOfBounds' ? 1_000_000_000 :
+        reason === 'tooSmall' ? 900_000_000 :
+            reason === 'wouldOverlap' ? 800_000_000 :
+                0;
+    const originalStates = new Map(activeWindows.map(w => [w.windowId, w.state]));
+    const affected = getAffectedWindowIds(states, activeWindows);
+    let score = invalidPenalty + affected.length * 10_000 + order / 1_000;
+    for (const id of affected) {
+        const previous = originalStates.get(id);
+        const next = states[id];
+        if (!next)
+            continue;
+        if (!previous) {
+            score += id === draggedId ? 0 : 50_000;
+            continue;
+        }
+        const isDragged = id === draggedId;
+        const movement = stateDelta(previous, next);
+        const areaDelta = Math.abs(stateArea(previous) - stateArea(next));
+        score += (isDragged ? 0 : 1_000) + movement * (isDragged ? 5 : 100) + areaDelta * (isDragged ? 2 : 25);
+    }
+    return score;
+}
 function computeDragTarget(input) {
     const { draggedId, mx, my, monitor, config, activeWindows } = input;
     const { workarea } = monitor;
@@ -572,6 +609,22 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         state.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(vSpan);
         touched.add(id);
     };
+    const cloneStates = (source) => {
+        const cloned = {};
+        for (const [id, state] of Object.entries(source)) {
+            cloned[id] = cloneState(state);
+        }
+        return cloned;
+    };
+    const scoreCandidateStates = (candidateStates, order = 0) => scoreDragLayoutCandidate(candidateStates, config, activeWindows, draggedId, order);
+    const applyCandidateStates = (candidateStates) => {
+        for (const [id, nextState] of Object.entries(candidateStates)) {
+            if (!states[id] || !statesEqual(states[id], nextState)) {
+                states[id] = cloneState(nextState);
+                touched.add(id);
+            }
+        }
+    };
     const rectsOverlap = (a, b) => {
         return hasHorizontalOverlap(a.hSpan, b.hSpan) && hasVerticalOverlap(a.vSpan, b.vSpan);
     };
@@ -663,14 +716,32 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             a.order - b.order);
     };
     const carveAwayFromTarget = (id) => {
-        const candidate = getCarveCandidatesAwayFromTarget(id)[0];
-        if (!candidate)
+        const candidates = getCarveCandidatesAwayFromTarget(id);
+        let bestCandidate = null;
+        let bestScore = Number.POSITIVE_INFINITY;
+        for (const [index, candidate] of candidates.entries()) {
+            const candidateStates = cloneStates(states);
+            if (candidate.axis === 'horizontal') {
+                candidateStates[id].hSpan = [...candidate.span];
+                candidateStates[id].hIndex = TilingEngine_1.TilingEngine.spanToHIndex(candidate.span);
+            }
+            else {
+                candidateStates[id].vSpan = [...candidate.span];
+                candidateStates[id].vIndex = TilingEngine_1.TilingEngine.spanToVIndex(candidate.span);
+            }
+            const score = scoreCandidateStates(candidateStates, index) + candidate.score / 1_000;
+            if (score < bestScore) {
+                bestScore = score;
+                bestCandidate = candidate;
+            }
+        }
+        if (!bestCandidate)
             return false;
-        if (candidate.axis === 'horizontal') {
-            setHSpan(id, candidate.span);
+        if (bestCandidate.axis === 'horizontal') {
+            setHSpan(id, bestCandidate.span);
         }
         else {
-            setVSpan(id, candidate.span);
+            setVSpan(id, bestCandidate.span);
         }
         return true;
     };
@@ -904,13 +975,12 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             }
             return null;
         };
-        for (const candidateHSpan of candidateHSpans) {
+        let bestStates = null;
+        let bestScore = Number.POSITIVE_INFINITY;
+        for (const [index, candidateHSpan] of candidateHSpans.entries()) {
             if (candidateHSpan[0] < 0 || candidateHSpan[1] > config.gridSize)
                 continue;
-            const candidateStates = {};
-            for (const [id, state] of Object.entries(states)) {
-                candidateStates[id] = cloneState(state);
-            }
+            const candidateStates = cloneStates(states);
             for (const stackId of stackIds) {
                 candidateStates[stackId].hSpan = [...candidateHSpan];
                 updateIndexes(candidateStates[stackId]);
@@ -931,12 +1001,14 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             if (failed || getDragBlockReason(candidateStates, config)) {
                 continue;
             }
-            for (const [id, nextState] of Object.entries(candidateStates)) {
-                if (!statesEqual(states[id], nextState)) {
-                    states[id] = cloneState(nextState);
-                    touched.add(id);
-                }
+            const score = scoreCandidateStates(candidateStates, index);
+            if (score < bestScore) {
+                bestScore = score;
+                bestStates = candidateStates;
             }
+        }
+        if (bestStates) {
+            applyCandidateStates(bestStates);
             return true;
         }
         return false;
@@ -983,11 +1055,10 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             shifts.push(targetCenter >= rowCenter ? -targetWidth : targetWidth);
             shifts.push(targetCenter >= rowCenter ? targetWidth : -targetWidth);
         }
-        for (const shift of shifts) {
-            const candidateStates = {};
-            for (const [id, state] of Object.entries(states)) {
-                candidateStates[id] = cloneState(state);
-            }
+        let bestStates = null;
+        let bestScore = Number.POSITIVE_INFINITY;
+        for (const [index, shift] of shifts.entries()) {
+            const candidateStates = cloneStates(states);
             let failed = false;
             for (const rowId of rowIds) {
                 const state = candidateStates[rowId];
@@ -1002,12 +1073,14 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             if (failed || getDragBlockReason(candidateStates, config)) {
                 continue;
             }
-            for (const [id, nextState] of Object.entries(candidateStates)) {
-                if (!statesEqual(states[id], nextState)) {
-                    states[id] = cloneState(nextState);
-                    touched.add(id);
-                }
+            const score = scoreCandidateStates(candidateStates, index);
+            if (score < bestScore) {
+                bestScore = score;
+                bestStates = candidateStates;
             }
+        }
+        if (bestStates) {
+            applyCandidateStates(bestStates);
             return true;
         }
         return false;
