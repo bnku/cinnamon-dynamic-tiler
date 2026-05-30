@@ -192,10 +192,10 @@ export class TilingEngine {
           if (leftCollision) {
             const currentStart = currentState.hSpan[0];
             const currentEnd = currentState.hSpan[1];
-            const currentWidth = currentEnd - currentStart;
-            let nextWidth = currentWidth > halfGrid ? halfGrid : config.minSpan;
-            if (currentWidth <= config.minSpan) nextWidth = config.minSpan;
-            nextState.hSpan = [currentStart, currentStart + nextWidth];
+            nextState.hSpan = [
+              currentStart,
+              Math.max(currentStart + config.minSpan, currentEnd - config.step)
+            ];
           } else {
             nextState.hSpan = targetSpan;
           }
@@ -220,10 +220,10 @@ export class TilingEngine {
           if (rightCollision) {
             const currentStart = currentState.hSpan[0];
             const currentEnd = currentState.hSpan[1];
-            const currentWidth = currentEnd - currentStart;
-            let nextWidth = currentWidth > halfGrid ? halfGrid : config.minSpan;
-            if (currentWidth <= config.minSpan) nextWidth = config.minSpan;
-            nextState.hSpan = [currentEnd - nextWidth, currentEnd];
+            nextState.hSpan = [
+              Math.min(currentEnd - config.minSpan, currentStart + config.step),
+              currentEnd
+            ];
           } else {
             nextState.hSpan = targetSpan;
           }
@@ -248,10 +248,10 @@ export class TilingEngine {
           if (topCollision) {
             const currentStart = currentState.vSpan[0];
             const currentEnd = currentState.vSpan[1];
-            const currentHeight = currentEnd - currentStart;
-            let nextHeight = currentHeight > halfGrid ? halfGrid : config.minSpan;
-            if (currentHeight <= config.minSpan) nextHeight = config.minSpan;
-            nextState.vSpan = [currentStart, currentStart + nextHeight];
+            nextState.vSpan = [
+              currentStart,
+              Math.max(currentStart + config.minSpan, currentEnd - config.step)
+            ];
           } else {
             nextState.vSpan = targetSpan;
           }
@@ -276,10 +276,10 @@ export class TilingEngine {
           if (bottomCollision) {
             const currentStart = currentState.vSpan[0];
             const currentEnd = currentState.vSpan[1];
-            const currentHeight = currentEnd - currentStart;
-            let nextHeight = currentHeight > halfGrid ? halfGrid : config.minSpan;
-            if (currentHeight <= config.minSpan) nextHeight = config.minSpan;
-            nextState.vSpan = [currentEnd - nextHeight, currentEnd];
+            nextState.vSpan = [
+              Math.min(currentEnd - config.minSpan, currentStart + config.step),
+              currentEnd
+            ];
           } else {
             nextState.vSpan = targetSpan;
           }

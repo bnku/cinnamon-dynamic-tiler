@@ -128,7 +128,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(nextStateB.lastDirection).toBe('right');
   });
 
-  test('should compress active window in place instead of overlapping if sibling is at minimum size', () => {
+  test('should softly compress active window in place instead of overlapping if sibling is at minimum size', () => {
     // Окно A [0, 2] (минимум) и окно B [2, 12] (ширина 10)
     const winA: { windowId: string; state: WindowState } = {
       windowId: 'winA',
@@ -158,7 +158,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       [winA, winB]
     );
 
-    expect(chain1['winB'].hSpan).toEqual([2, 8]);
+    expect(chain1['winB'].hSpan).toEqual([2, 10]);
     expect(chain1['winA'].hSpan).toEqual([0, 2]); // Сосед A не изменился
 
     // Теперь B сжался до [2, 4] (ширина 2 - минимальная)
@@ -173,7 +173,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       [winA, winB_step1]
     );
 
-    // В тупике окно B сожмется на месте до [2, 4]
+    // В тупике минимальное окно B останется на месте.
     expect(chain2['winB'].hSpan).toEqual([2, 4]);
   });
 
@@ -747,6 +747,70 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(chain['chat'].hSpan).toEqual([8, 12]);
     expect(chain['chrome'].hSpan).toEqual([4, 8]);
     expect(chain['leftStack'].hSpan).toEqual([2, 4]);
+  });
+
+  test('should softly shrink active window from the opposite edge when left expansion is blocked', () => {
+    const stepOneConfig = { ...fakeConfig, step: 1 };
+    const fileManager = {
+      windowId: 'fileManager',
+      state: { hIndex: 0, vIndex: 5, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'left' as const }
+    };
+    const terminalStack = {
+      windowId: 'terminalStack',
+      state: { hIndex: 0, vIndex: 5, hSpan: [2, 4] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const chrome = {
+      windowId: 'chrome',
+      state: { hIndex: 5, vIndex: 5, hSpan: [4, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const chat = {
+      windowId: 'chat',
+      state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'chrome',
+      'left',
+      stepOneConfig,
+      [fileManager, terminalStack, chrome, chat]
+    );
+
+    expect(chain['chrome'].hSpan).toEqual([4, 9]);
+    expect(chain['chat'].hSpan).toEqual([9, 12]);
+    expect(chain['terminalStack'].hSpan).toEqual([2, 4]);
+    expect(chain['fileManager'].hSpan).toEqual([0, 2]);
+  });
+
+  test('should softly shrink active window from the opposite edge when right expansion is blocked', () => {
+    const stepOneConfig = { ...fakeConfig, step: 1 };
+    const fileManager = {
+      windowId: 'fileManager',
+      state: { hIndex: 0, vIndex: 5, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'left' as const }
+    };
+    const terminalStack = {
+      windowId: 'terminalStack',
+      state: { hIndex: 0, vIndex: 5, hSpan: [2, 4] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const chrome = {
+      windowId: 'chrome',
+      state: { hIndex: 5, vIndex: 5, hSpan: [4, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const chat = {
+      windowId: 'chat',
+      state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'chrome',
+      'right',
+      stepOneConfig,
+      [fileManager, terminalStack, chrome, chat]
+    );
+
+    expect(chain['chrome'].hSpan).toEqual([5, 10]);
+    expect(chain['terminalStack'].hSpan).toEqual([2, 5]);
+    expect(chain['fileManager'].hSpan).toEqual([0, 2]);
+    expect(chain['chat'].hSpan).toEqual([10, 12]);
   });
 
   test('should handle first shift-up keypress', () => {
