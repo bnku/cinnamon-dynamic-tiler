@@ -52,7 +52,7 @@ class DynamicTilerExtension {
     dragSession = null;
     vacancyPreview = null;
     blockedPreview = null;
-    lastDndTransaction = null;
+    dndTransactions = [];
     lastDndDebugSignature = '';
     lastDragTarget = null;
     constructor(metadata) {
@@ -725,13 +725,13 @@ class DynamicTilerExtension {
                             lastDirection: nextState.lastDirection
                         };
                     }
-                    this.lastDndTransaction = {
+                    this.recordDndTransaction({
                         draggedId: this.draggedWindowId,
                         monitorId: String(activeMonitor.id),
                         beforeStates: session.lastDragBeforeStates,
                         afterStates,
                         affected: [...session.lastDragAffected]
-                    };
+                    });
                 }
                 // If cross-monitor move: collapse the vacancy on the source monitor first
                 if (session.wasTiled && session.sourceMonitor && activeMonitor && session.sourceMonitor.id !== activeMonitor.id) {
@@ -817,18 +817,15 @@ class DynamicTilerExtension {
                 }
             }
             let collapsedStates = null;
-            const transactionMatches = this.lastDndTransaction &&
-                this.lastDndTransaction.draggedId === draggedId &&
-                this.lastDndTransaction.monitorId === String(monitor.id);
-            if (transactionMatches) {
-                collapsedStates = (0, DragTiling_1.restoreDragTransaction)(this.lastDndTransaction, draggedId, config, activeWindowsOnMonitor);
-                if (collapsedStates) {
-                    global.log(`[Dynamic Tiler] Restored DnD transaction neighbors for ${draggedId}`);
-                }
-                else {
-                    global.log(`[Dynamic Tiler] DnD transaction restore skipped for ${draggedId}; falling back to vacancy collapse`);
-                }
-                this.lastDndTransaction = null;
+            const restoredTransaction = (0, DragTiling_1.restoreDragTransactionHistory)(this.dndTransactions, draggedId, String(monitor.id), config, activeWindowsOnMonitor);
+            if (restoredTransaction) {
+                collapsedStates = restoredTransaction.states;
+                this.dndTransactions.splice(restoredTransaction.snapshotIndex, 1);
+                global.log(`[Dynamic Tiler] Restored DnD transaction neighbors for ${draggedId}`);
+            }
+            else if (this.dndTransactions.some(transaction => transaction.draggedId === draggedId &&
+                transaction.monitorId === String(monitor.id))) {
+                global.log(`[Dynamic Tiler] DnD transaction restore skipped for ${draggedId}; falling back to vacancy collapse`);
             }
             if (!collapsedStates) {
                 collapsedStates = (0, DragTiling_1.collapseVacancy)(draggedId, config, activeWindowsOnMonitor);
@@ -862,8 +859,16 @@ class DynamicTilerExtension {
             this.cache.clearState(draggedId);
             global.log(`[Dynamic Tiler] Successfully collapsed grid vacancy and cleared state for ${draggedId}`);
         }
-        catch (err) {
-            global.logError(`[Dynamic Tiler] Failed to collapse and apply vacancy: ${err.message}`);
+        catch (e) {
+            global.logError(`[Dynamic Tiler] Failed to collapse and apply vacancy: ${e.message}`);
+        }
+    }
+    recordDndTransaction(transaction) {
+        const maxTransactions = 8;
+        this.dndTransactions = this.dndTransactions.filter(existing => !(existing.draggedId === transaction.draggedId && existing.monitorId === transaction.monitorId));
+        this.dndTransactions.push(transaction);
+        if (this.dndTransactions.length > maxTransactions) {
+            this.dndTransactions.splice(0, this.dndTransactions.length - maxTransactions);
         }
     }
     getBlockedPreviewVariant(reason) {

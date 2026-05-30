@@ -1,5 +1,5 @@
 import { TilingEngine } from '../src/core/TilingEngine';
-import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps, restoreDragTransaction, shouldFloatAfterModifierRelease, solveDragTransitions } from '../src/DragTiling';
+import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps, restoreDragTransaction, restoreDragTransactionHistory, shouldFloatAfterModifierRelease, solveDragTransitions } from '../src/DragTiling';
 import { ScreenInfo, WindowState, Config } from '../src/core/types';
 
 describe('TilingEngine - 12-Column Layout Calculations', () => {
@@ -977,6 +977,38 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(result['existing'].vSpan).toEqual([6, 12]);
   });
 
+  test('DnD should choose vertical carving for a top insertion into a wide window', () => {
+    const activeWindows = [
+      {
+        windowId: 'editor',
+        state: { hIndex: 3, vIndex: 5, hSpan: [0, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 9, vIndex: 5, hSpan: [8, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'dragged-terminal',
+      [2, 6],
+      [0, 2],
+      fakeConfig,
+      activeWindows,
+      {
+        intentPoint: { h: 4, v: 0.2 }
+      }
+    );
+
+    expect(result['dragged-terminal'].hSpan).toEqual([2, 6]);
+    expect(result['dragged-terminal'].vSpan).toEqual([0, 2]);
+    expect(result.editor.hSpan).toEqual([0, 8]);
+    expect(result.editor.vSpan).toEqual([2, 12]);
+    expect(result['right-panel'].hSpan).toEqual([8, 12]);
+    expect(result['right-panel'].vSpan).toEqual([0, 12]);
+    expect(hasLayoutOverlaps(result)).toBe(false);
+  });
+
   test('DnD target computation should keep top, center, and bottom magnetic height gestures', () => {
     const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
     const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
@@ -1484,6 +1516,63 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(result['top-terminal'].hSpan).toEqual([8, 10]);
     expect(result['bottom-terminal'].hSpan).toEqual([8, 10]);
     expect(result['chrome'].hSpan).toEqual([4, 8]);
+    expect(hasLayoutOverlaps(result)).toBe(false);
+  });
+
+  test('DnD should redistribute a vertical stack in place before using horizontal relief', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-top',
+        state: { hIndex: 0, vIndex: 2, hSpan: [0, 2] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'left-bottom',
+        state: { hIndex: 0, vIndex: 8, hSpan: [0, 2] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [6, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'top-terminal',
+        state: { hIndex: 4, vIndex: 1, hSpan: [4, 6] as [number, number], vSpan: [0, 4] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 4, vIndex: 5, hSpan: [4, 6] as [number, number], vSpan: [4, 8] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'bottom-terminal',
+        state: { hIndex: 4, vIndex: 9, hSpan: [4, 6] as [number, number], vSpan: [8, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'file-manager',
+        state: { hIndex: 2, vIndex: 1, hSpan: [2, 4] as [number, number], vSpan: [0, 3] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'file-manager',
+      [4, 6],
+      [0, 3],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['file-manager'].hSpan).toEqual([4, 6]);
+    expect(result['file-manager'].vSpan).toEqual([0, 3]);
+    expect(result['top-terminal'].hSpan).toEqual([4, 6]);
+    expect(result['top-terminal'].vSpan).toEqual([3, 6]);
+    expect(result['middle-terminal'].hSpan).toEqual([4, 6]);
+    expect(result['middle-terminal'].vSpan).toEqual([6, 9]);
+    expect(result['bottom-terminal'].hSpan).toEqual([4, 6]);
+    expect(result['bottom-terminal'].vSpan).toEqual([9, 12]);
+    expect(result.chrome.hSpan).toEqual([6, 10]);
+    expect(result['right-panel'].hSpan).toEqual([10, 12]);
     expect(hasLayoutOverlaps(result)).toBe(false);
   });
 
@@ -2163,6 +2252,122 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     );
 
     expect(restored).toBeNull();
+  });
+
+  test('DnD transaction history should restore the matching older commit when newer commits belong to another dragged window', () => {
+    const terminalInsertBefore = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+    const terminalInserted = solveDragTransitions(
+      'terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      terminalInsertBefore
+    );
+    const noteInsertBefore = [
+      {
+        windowId: 'notes',
+        state: { hIndex: 0, vIndex: 5, hSpan: [0, 4] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+    const noteInserted = solveDragTransitions(
+      'scratch',
+      [0, 2],
+      [0, 12],
+      fakeConfig,
+      noteInsertBefore
+    );
+    const history = [
+      {
+        draggedId: 'terminal',
+        monitorId: 'HDMI-1',
+        beforeStates: Object.fromEntries(terminalInsertBefore.map(w => [w.windowId, w.state])),
+        afterStates: terminalInserted.states,
+        affected: terminalInserted.affected
+      },
+      {
+        draggedId: 'scratch',
+        monitorId: 'HDMI-1',
+        beforeStates: Object.fromEntries(noteInsertBefore.map(w => [w.windowId, w.state])),
+        afterStates: noteInserted.states,
+        affected: noteInserted.affected
+      }
+    ];
+    const activeAfterTerminalInsert = Object.entries(terminalInserted.states).map(([windowId, state]) => ({ windowId, state }));
+
+    const restored = restoreDragTransactionHistory(
+      history,
+      'terminal',
+      'HDMI-1',
+      fakeConfig,
+      activeAfterTerminalInsert
+    );
+
+    expect(restored).not.toBeNull();
+    expect(restored!.snapshotIndex).toBe(0);
+    expect(restored!.states['chrome'].hSpan).toEqual([4, 12]);
+    expect(hasLayoutOverlaps(restored!.states)).toBe(false);
+  });
+
+  test('DnD transaction history should prefer the newest matching restorable commit', () => {
+    const oldBefore = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 6, vIndex: 5, hSpan: [2, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+    const oldInserted = solveDragTransitions(
+      'terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      oldBefore
+    );
+    const latestBefore = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+    const latestInserted = solveDragTransitions(
+      'terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      latestBefore
+    );
+    const activeAfterLatestInsert = Object.entries(latestInserted.states).map(([windowId, state]) => ({ windowId, state }));
+
+    const restored = restoreDragTransactionHistory(
+      [
+        {
+          draggedId: 'terminal',
+          monitorId: 'HDMI-1',
+          beforeStates: Object.fromEntries(oldBefore.map(w => [w.windowId, w.state])),
+          afterStates: oldInserted.states,
+          affected: oldInserted.affected
+        },
+        {
+          draggedId: 'terminal',
+          monitorId: 'HDMI-1',
+          beforeStates: Object.fromEntries(latestBefore.map(w => [w.windowId, w.state])),
+          afterStates: latestInserted.states,
+          affected: latestInserted.affected
+        }
+      ],
+      'terminal',
+      'HDMI-1',
+      fakeConfig,
+      activeAfterLatestInsert
+    );
+
+    expect(restored).not.toBeNull();
+    expect(restored!.snapshotIndex).toBe(1);
+    expect(restored!.states['chrome'].hSpan).toEqual([4, 12]);
   });
 
   test('DnD extraction intent should ignore accidental modifier release near the source slot', () => {

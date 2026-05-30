@@ -1,7 +1,7 @@
 import { TilingEngine } from './core/TilingEngine';
 import { TilingUseCase } from './core/usecases/TilingUseCase';
 import { CinnamonShellAdapter, CinnamonCache, CinnamonConfigProvider } from './CinnamonAdapters';
-import { collapseVacancy, computeDragTarget, restoreDragTransaction, shouldFloatAfterModifierRelease, solveDragTransitions, type DragBlockReason, type DragSolveResult, type DragTargetResult, type DragTransactionSnapshot } from './DragTiling';
+import { collapseVacancy, computeDragTarget, restoreDragTransactionHistory, shouldFloatAfterModifierRelease, solveDragTransitions, type DragBlockReason, type DragSolveResult, type DragTargetResult, type DragTransactionSnapshot } from './DragTiling';
 import { TilePreview } from './TilePreview';
 import { WindowState } from './core/types';
 
@@ -56,7 +56,7 @@ class DynamicTilerExtension {
   private dragSession: any = null;
   private vacancyPreview: TilePreview | null = null;
   private blockedPreview: TilePreview | null = null;
-  private lastDndTransaction: DragTransactionSnapshot | null = null;
+  private dndTransactions: DragTransactionSnapshot[] = [];
   private lastDndDebugSignature: string = '';
   private lastDragTarget: DragTargetResult | null = null;
 
@@ -809,13 +809,13 @@ class DynamicTilerExtension {
             };
           }
 
-          this.lastDndTransaction = {
+          this.recordDndTransaction({
             draggedId: this.draggedWindowId,
             monitorId: String(activeMonitor.id),
             beforeStates: session.lastDragBeforeStates,
             afterStates,
             affected: [...session.lastDragAffected]
-          };
+          });
         }
 
         // If cross-monitor move: collapse the vacancy on the source monitor first
@@ -910,26 +910,23 @@ class DynamicTilerExtension {
       }
 
       let collapsedStates: Record<string, WindowState> | null = null;
-      const transactionMatches =
-        this.lastDndTransaction &&
-        this.lastDndTransaction.draggedId === draggedId &&
-        this.lastDndTransaction.monitorId === String(monitor.id);
+      const restoredTransaction = restoreDragTransactionHistory(
+        this.dndTransactions,
+        draggedId,
+        String(monitor.id),
+        config,
+        activeWindowsOnMonitor
+      );
 
-      if (transactionMatches) {
-        collapsedStates = restoreDragTransaction(
-          this.lastDndTransaction,
-          draggedId,
-          config,
-          activeWindowsOnMonitor
-        );
-
-        if (collapsedStates) {
-          global.log(`[Dynamic Tiler] Restored DnD transaction neighbors for ${draggedId}`);
-        } else {
-          global.log(`[Dynamic Tiler] DnD transaction restore skipped for ${draggedId}; falling back to vacancy collapse`);
-        }
-
-        this.lastDndTransaction = null;
+      if (restoredTransaction) {
+        collapsedStates = restoredTransaction.states;
+        this.dndTransactions.splice(restoredTransaction.snapshotIndex, 1);
+        global.log(`[Dynamic Tiler] Restored DnD transaction neighbors for ${draggedId}`);
+      } else if (this.dndTransactions.some(transaction =>
+        transaction.draggedId === draggedId &&
+        transaction.monitorId === String(monitor.id)
+      )) {
+        global.log(`[Dynamic Tiler] DnD transaction restore skipped for ${draggedId}; falling back to vacancy collapse`);
       }
 
       if (!collapsedStates) {
@@ -965,8 +962,20 @@ class DynamicTilerExtension {
       // Remove the dragged window from the tiling engine cache (makes it a free floating window)
       this.cache.clearState(draggedId);
       global.log(`[Dynamic Tiler] Successfully collapsed grid vacancy and cleared state for ${draggedId}`);
-    } catch (err: any) {
-      global.logError(`[Dynamic Tiler] Failed to collapse and apply vacancy: ${err.message}`);
+    } catch (e: any) {
+      global.logError(`[Dynamic Tiler] Failed to collapse and apply vacancy: ${e.message}`);
+    }
+  }
+
+  private recordDndTransaction(transaction: DragTransactionSnapshot): void {
+    const maxTransactions = 8;
+
+    this.dndTransactions = this.dndTransactions.filter(existing =>
+      !(existing.draggedId === transaction.draggedId && existing.monitorId === transaction.monitorId)
+    );
+    this.dndTransactions.push(transaction);
+    if (this.dndTransactions.length > maxTransactions) {
+      this.dndTransactions.splice(0, this.dndTransactions.length - maxTransactions);
     }
   }
 

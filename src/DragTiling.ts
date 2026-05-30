@@ -30,6 +30,11 @@ export interface DragTransactionSnapshot {
   affected: string[];
 }
 
+export interface DragTransactionRestoreResult {
+  states: Record<string, WindowState>;
+  snapshotIndex: number;
+}
+
 export interface ExtractionIntentInput {
   pointerX: number;
   pointerY: number;
@@ -233,6 +238,31 @@ export function restoreDragTransaction(
   }
 
   return restoredStates;
+}
+
+export function restoreDragTransactionHistory(
+  snapshots: DragTransactionSnapshot[],
+  draggedId: string,
+  monitorId: string,
+  config: Config,
+  activeWindows: { windowId: string; state: WindowState }[]
+): DragTransactionRestoreResult | null {
+  for (let i = snapshots.length - 1; i >= 0; i--) {
+    const snapshot = snapshots[i];
+    if (snapshot.draggedId !== draggedId || snapshot.monitorId !== monitorId) {
+      continue;
+    }
+
+    const states = restoreDragTransaction(snapshot, draggedId, config, activeWindows);
+    if (states) {
+      return {
+        states,
+        snapshotIndex: i
+      };
+    }
+  }
+
+  return null;
 }
 
 function getAffectedWindowIds(
@@ -833,38 +863,86 @@ export function calculateDragTransitions(
   const swapStates = maybeSwapWindows();
   if (swapStates) return swapStates;
 
-  const carveHorizontalAwayFromTarget = (id: string): boolean => {
-    const state = states[id];
-    const targetCenter = spanCenter(targetHSpan);
-    const stateCenter = spanCenter(state.hSpan);
-    const candidates: [number, number][] = targetCenter >= stateCenter
-      ? [[state.hSpan[0], targetHSpan[0]], [targetHSpan[1], state.hSpan[1]]]
-      : [[targetHSpan[1], state.hSpan[1]], [state.hSpan[0], targetHSpan[0]]];
-
-    for (const candidate of candidates) {
-      if (candidate[0] >= 0 && candidate[1] <= config.gridSize && spanSize(candidate) >= config.minSpan) {
-        setHSpan(id, candidate);
-        return true;
-      }
-    }
-    return false;
+  type CarveCandidate = {
+    axis: 'horizontal' | 'vertical';
+    span: [number, number];
+    score: number;
+    order: number;
   };
 
-  const carveVerticalAwayFromTarget = (id: string): boolean => {
+  const getCarveCandidatesAwayFromTarget = (id: string): CarveCandidate[] => {
     const state = states[id];
-    const targetCenter = spanCenter(targetVSpan);
-    const stateCenter = spanCenter(state.vSpan);
-    const candidates: [number, number][] = targetCenter >= stateCenter
+    const stateWidth = spanSize(state.hSpan);
+    const stateHeight = spanSize(state.vSpan);
+    const originalArea = stateWidth * stateHeight;
+    const hOverlap = Math.max(0, Math.min(targetHSpan[1], state.hSpan[1]) - Math.max(targetHSpan[0], state.hSpan[0]));
+    const vOverlap = Math.max(0, Math.min(targetVSpan[1], state.vSpan[1]) - Math.max(targetVSpan[0], state.vSpan[0]));
+    const hCoverage = stateWidth > 0 ? hOverlap / stateWidth : 0;
+    const vCoverage = stateHeight > 0 ? vOverlap / stateHeight : 0;
+    const touchesHorizontalEdge =
+      Math.min(Math.abs(targetHSpan[0] - state.hSpan[0]), Math.abs(targetHSpan[1] - state.hSpan[1])) <= 0.5;
+    const touchesVerticalEdge =
+      Math.min(Math.abs(targetVSpan[0] - state.vSpan[0]), Math.abs(targetVSpan[1] - state.vSpan[1])) <= 0.5;
+
+    const horizontalSpanCandidates: [number, number][] = spanCenter(targetHSpan) >= spanCenter(state.hSpan)
+      ? [[state.hSpan[0], targetHSpan[0]], [targetHSpan[1], state.hSpan[1]]]
+      : [[targetHSpan[1], state.hSpan[1]], [state.hSpan[0], targetHSpan[0]]];
+    const verticalSpanCandidates: [number, number][] = spanCenter(targetVSpan) >= spanCenter(state.vSpan)
       ? [[state.vSpan[0], targetVSpan[0]], [targetVSpan[1], state.vSpan[1]]]
       : [[targetVSpan[1], state.vSpan[1]], [state.vSpan[0], targetVSpan[0]]];
 
-    for (const candidate of candidates) {
-      if (candidate[0] >= 0 && candidate[1] <= config.gridSize && spanSize(candidate) >= config.minSpan) {
-        setVSpan(id, candidate);
-        return true;
+    const candidates: CarveCandidate[] = [];
+    let order = 0;
+
+    for (const span of horizontalSpanCandidates) {
+      if (span[0] >= 0 && span[1] <= config.gridSize && spanSize(span) >= config.minSpan) {
+        const remainingArea = spanSize(span) * stateHeight;
+        const axisPreference =
+          (vCoverage - hCoverage) * 2 +
+          (touchesHorizontalEdge ? 1 : 0) -
+          (touchesVerticalEdge ? 0.5 : 0) +
+          0.05;
+        candidates.push({
+          axis: 'horizontal',
+          span,
+          score: (originalArea - remainingArea) * 10 - axisPreference,
+          order: order++
+        });
       }
     }
-    return false;
+
+    for (const span of verticalSpanCandidates) {
+      if (span[0] >= 0 && span[1] <= config.gridSize && spanSize(span) >= config.minSpan) {
+        const remainingArea = stateWidth * spanSize(span);
+        const axisPreference =
+          (hCoverage - vCoverage) * 2 +
+          (touchesVerticalEdge ? 1 : 0) -
+          (touchesHorizontalEdge ? 0.5 : 0);
+        candidates.push({
+          axis: 'vertical',
+          span,
+          score: (originalArea - remainingArea) * 10 - axisPreference,
+          order: order++
+        });
+      }
+    }
+
+    return candidates.sort((a, b) =>
+      a.score - b.score ||
+      a.order - b.order
+    );
+  };
+
+  const carveAwayFromTarget = (id: string): boolean => {
+    const candidate = getCarveCandidatesAwayFromTarget(id)[0];
+    if (!candidate) return false;
+
+    if (candidate.axis === 'horizontal') {
+      setHSpan(id, candidate.span);
+    } else {
+      setVSpan(id, candidate.span);
+    }
+    return true;
   };
 
   const separateHorizontally = (movableId: string, anchorId: string): boolean => {
@@ -991,6 +1069,78 @@ export function calculateDragTransitions(
     hSpan: [...targetHSpan],
     vSpan: [...targetVSpan],
     lastDirection: null
+  };
+
+  const tryRedistributeVerticalStackInsertion = (): boolean => {
+    if (spanSize(targetVSpan) >= config.gridSize) return false;
+
+    const sameColumnWindows = otherWindows
+      .filter(w => spansEqual(states[w.windowId].hSpan, targetHSpan))
+      .sort((a, b) => states[a.windowId].vSpan[0] - states[b.windowId].vSpan[0] || a.windowId.localeCompare(b.windowId));
+    const collidingStackWindows = sameColumnWindows.filter(w => rectsOverlap(states[w.windowId], states[draggedId]));
+
+    if (sameColumnWindows.length === 0 || collidingStackWindows.length === 0) {
+      return false;
+    }
+    if ((sameColumnWindows.length + 1) * config.minSpan > config.gridSize) {
+      return false;
+    }
+
+    const stackTop = Math.min(...sameColumnWindows.map(w => states[w.windowId].vSpan[0]));
+    const stackBottom = Math.max(...sameColumnWindows.map(w => states[w.windowId].vSpan[1]));
+    if (stackTop > 0 || stackBottom < config.gridSize) {
+      return false;
+    }
+
+    const slotCount = sameColumnWindows.length + 1;
+    const targetCenter = spanCenter(targetVSpan);
+    const targetIndex = Math.max(
+      0,
+      Math.min(slotCount - 1, Math.floor(targetCenter / (config.gridSize / slotCount)))
+    );
+    const baseHeight = Math.floor(config.gridSize / slotCount);
+    const extraRows = config.gridSize - baseHeight * slotCount;
+    const slots: [number, number][] = [];
+    let cursor = 0;
+
+    for (let i = 0; i < slotCount; i++) {
+      const height = baseHeight + (i < extraRows ? 1 : 0);
+      slots.push([cursor, cursor + height]);
+      cursor += height;
+    }
+
+    const candidateStates: Record<string, WindowState> = {};
+    for (const [id, state] of Object.entries(states)) {
+      candidateStates[id] = cloneState(state);
+    }
+
+    candidateStates[draggedId].hSpan = [...targetHSpan];
+    candidateStates[draggedId].vSpan = [...slots[targetIndex]];
+    updateIndexes(candidateStates[draggedId]);
+
+    let sourceIndex = 0;
+    for (let slotIndex = 0; slotIndex < slotCount; slotIndex++) {
+      if (slotIndex === targetIndex) continue;
+
+      const stackWindow = sameColumnWindows[sourceIndex++];
+      const state = candidateStates[stackWindow.windowId];
+      state.hSpan = [...targetHSpan];
+      state.vSpan = [...slots[slotIndex]];
+      updateIndexes(state);
+    }
+
+    if (getDragBlockReason(candidateStates, config)) {
+      return false;
+    }
+
+    for (const [id, nextState] of Object.entries(candidateStates)) {
+      if (!statesEqual(states[id], nextState)) {
+        states[id] = cloneState(nextState);
+        touched.add(id);
+      }
+    }
+
+    return true;
   };
 
   const tryRelocateTightVerticalStack = (): boolean => {
@@ -1295,7 +1445,9 @@ export function calculateDragTransitions(
     return true;
   };
 
-  tryRelocateTightVerticalStack();
+  if (!tryRedistributeVerticalStackInsertion()) {
+    tryRelocateTightVerticalStack();
+  }
   if (!tryCarveEdgeInsertionCorridor()) {
     tryRelocateTightHorizontalStack();
   }
@@ -1437,7 +1589,7 @@ export function calculateDragTransitions(
 
       // Prefer carving space out of large intersecting windows. This keeps a wide
       // window anchored instead of throwing it across already occupied columns.
-      const carved = carveHorizontalAwayFromTarget(w.windowId) || carveVerticalAwayFromTarget(w.windowId);
+      const carved = carveAwayFromTarget(w.windowId);
 
       if (carved) {
         continue;

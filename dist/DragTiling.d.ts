@@ -23,6 +23,10 @@ export interface DragTransactionSnapshot {
     afterStates: Record<string, WindowState>;
     affected: string[];
 }
+export interface DragTransactionRestoreResult {
+    states: Record<string, WindowState>;
+    snapshotIndex: number;
+}
 export interface ExtractionIntentInput {
     pointerX: number;
     pointerY: number;
@@ -90,6 +94,10 @@ export declare function restoreDragTransaction(snapshot: DragTransactionSnapshot
     windowId: string;
     state: WindowState;
 }[]): Record<string, WindowState> | null;
+export declare function restoreDragTransactionHistory(snapshots: DragTransactionSnapshot[], draggedId: string, monitorId: string, config: Config, activeWindows: {
+    windowId: string;
+    state: WindowState;
+}[]): DragTransactionRestoreResult | null;
 export declare function computeDragTarget(input: DragTargetInput): DragTargetResult;
 export declare function calculateDragTransitions(draggedId: string, targetHSpan: [number, number], targetVSpan: [number, number], config: Config, activeWindows: {
     windowId: string;
