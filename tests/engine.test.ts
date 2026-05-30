@@ -24,6 +24,51 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     gaps: 0,
   };
 
+  const canonicalStates = (states: Record<string, WindowState>) => Object.fromEntries(
+    Object.entries(states)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([id, state]) => [id, { hSpan: state.hSpan, vSpan: state.vSpan }])
+  );
+
+  const deterministicPermutations = <T,>(items: T[]): T[][] => [
+    [...items].reverse(),
+    [...items.slice(1), items[0]],
+    [...items.slice(2), ...items.slice(0, 2)]
+  ];
+
+  const expectStableDnDResultAcrossPermutations = (
+    activeWindows: { windowId: string; state: WindowState }[],
+    draggedId: string,
+    targetHSpan: [number, number],
+    targetVSpan: [number, number],
+    options = {}
+  ) => {
+    const expected = solveDragTransitions(
+      draggedId,
+      targetHSpan,
+      targetVSpan,
+      fakeConfig,
+      activeWindows,
+      options
+    );
+
+    for (const permutation of deterministicPermutations(activeWindows)) {
+      const result = solveDragTransitions(
+        draggedId,
+        targetHSpan,
+        targetVSpan,
+        fakeConfig,
+        permutation,
+        options
+      );
+
+      expect(result.status).toBe(expected.status);
+      expect(result.reason).toBe(expected.reason);
+      expect(result.affected).toEqual(expected.affected);
+      expect(canonicalStates(result.states)).toEqual(canonicalStates(expected.states));
+    }
+  };
+
   test('should return default state', () => {
     const defaultState = TilingEngine.getDefaultState();
     expect(defaultState).toEqual({
@@ -1896,7 +1941,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(hasLayoutOverlaps(result.states)).toBe(false);
   });
 
-  test('DnD experimental swap should exchange non-neighbor windows with the same grid shape', () => {
+  test('DnD explicit swap should exchange non-neighbor windows with the same grid shape', () => {
     const activeWindows = [
       {
         windowId: 'left-terminal',
@@ -1919,7 +1964,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       fakeConfig,
       activeWindows,
       {
-        experimentalSwapSameShapeWindows: true,
+        swapWindows: true,
         intentPoint: { h: 11, v: 6 }
       }
     );
@@ -1929,7 +1974,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(result['middle-terminal'].hSpan).toEqual([4, 6]);
   });
 
-  test('DnD experimental swap should stay disabled unless the setting is enabled', () => {
+  test('DnD swap should stay disabled unless the swap modifier is active', () => {
     const activeWindows = [
       {
         windowId: 'left-terminal',
@@ -1948,7 +1993,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       fakeConfig,
       activeWindows,
       {
-        experimentalSwapSameShapeWindows: false,
+        swapWindows: false,
         intentPoint: { h: 11, v: 6 }
       }
     );
@@ -1958,7 +2003,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(hasLayoutOverlaps(result)).toBe(true);
   });
 
-  test('DnD experimental swap should not trigger for same-area windows with different shape', () => {
+  test('DnD explicit swap should exchange windows with different shapes', () => {
     const activeWindows = [
       {
         windowId: 'wide-window',
@@ -1977,18 +2022,18 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       fakeConfig,
       activeWindows,
       {
-        experimentalSwapSameShapeWindows: true,
+        swapWindows: true,
         intentPoint: { h: 9, v: 6 }
       }
     );
 
     expect(result['wide-window'].hSpan).toEqual([8, 10]);
     expect(result['wide-window'].vSpan).toEqual([0, 12]);
-    expect(result['tall-window'].hSpan).not.toEqual([0, 4]);
-    expect(result['tall-window'].vSpan).not.toEqual([0, 6]);
+    expect(result['tall-window'].hSpan).toEqual([0, 4]);
+    expect(result['tall-window'].vSpan).toEqual([0, 6]);
   });
 
-  test('DnD experimental swap should not trigger near a target edge', () => {
+  test('DnD explicit swap should work even near a target edge', () => {
     const activeWindows = [
       {
         windowId: 'left-terminal',
@@ -2007,14 +2052,56 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       fakeConfig,
       activeWindows,
       {
-        experimentalSwapSameShapeWindows: true,
+        swapWindows: true,
         intentPoint: { h: 10.1, v: 6 }
       }
     );
 
     expect(result['left-terminal'].hSpan).toEqual([10, 12]);
-    expect(result['right-terminal'].hSpan).not.toEqual([0, 2]);
-    expect(hasLayoutOverlaps(result)).toBe(true);
+    expect(result['right-terminal'].hSpan).toEqual([0, 2]);
+    expect(hasLayoutOverlaps(result)).toBe(false);
+  });
+
+  test('DnD explicit swap should exchange neighboring windows with different shapes', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 1, vIndex: 5, hSpan: [0, 4] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 4, vIndex: 2, hSpan: [4, 6] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const disabledResult = calculateDragTransitions(
+      'left-terminal',
+      [4, 6],
+      [0, 6],
+      fakeConfig,
+      activeWindows,
+      {
+        swapWindows: false,
+        intentPoint: { h: 5, v: 3 }
+      }
+    );
+    const result = calculateDragTransitions(
+      'left-terminal',
+      [4, 6],
+      [0, 6],
+      fakeConfig,
+      activeWindows,
+      {
+        swapWindows: true,
+        intentPoint: { h: 5, v: 3 }
+      }
+    );
+
+    expect(canonicalStates(result)).not.toEqual(canonicalStates(disabledResult));
+    expect(result['left-terminal'].hSpan).toEqual([4, 6]);
+    expect(result['left-terminal'].vSpan).toEqual([0, 6]);
+    expect(result['right-terminal'].hSpan).toEqual([0, 4]);
+    expect(result['right-terminal'].vSpan).toEqual([0, 12]);
   });
 
   test('DnD layout validation should accept a resolved swap result', () => {
@@ -2036,7 +2123,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       fakeConfig,
       activeWindows,
       {
-        experimentalSwapSameShapeWindows: true,
+        swapWindows: true,
         intentPoint: { h: 11, v: 6 }
       }
     );
@@ -2063,7 +2150,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       fakeConfig,
       activeWindows,
       {
-        experimentalSwapSameShapeWindows: false,
+        swapWindows: false,
         intentPoint: { h: 11, v: 6 }
       }
     );
@@ -2110,7 +2197,7 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       fakeConfig,
       activeWindows,
       {
-        experimentalSwapSameShapeWindows: true,
+        swapWindows: true,
         intentPoint: { h: 11, v: 6 }
       }
     );
@@ -2144,12 +2231,6 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       }
     ];
 
-    const canonical = (states: Record<string, WindowState>) => Object.fromEntries(
-      Object.entries(states)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([id, state]) => [id, { hSpan: state.hSpan, vSpan: state.vSpan }])
-    );
-
     const expected = solveDragTransitions(
       'dragged-terminal',
       [10, 12],
@@ -2175,8 +2256,96 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       expect(result.status).toBe(expected.status);
       expect(result.reason).toBe(expected.reason);
       expect(result.affected).toEqual(expected.affected);
-      expect(canonical(result.states)).toEqual(canonical(expected.states));
+      expect(canonicalStates(result.states)).toEqual(canonicalStates(expected.states));
     }
+  });
+
+  test('DnD solve result should stay stable across permutations for edge corridor insertion', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-top',
+        state: { hIndex: 0, vIndex: 2, hSpan: [0, 2] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'left-bottom',
+        state: { hIndex: 0, vIndex: 8, hSpan: [0, 2] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-top',
+        state: { hIndex: 2, vIndex: 1, hSpan: [2, 4] as [number, number], vSpan: [0, 4] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-mid',
+        state: { hIndex: 2, vIndex: 5, hSpan: [2, 4] as [number, number], vSpan: [4, 8] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-bottom',
+        state: { hIndex: 2, vIndex: 9, hSpan: [2, 4] as [number, number], vSpan: [8, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    expectStableDnDResultAcrossPermutations(
+      activeWindows,
+      'file-manager',
+      [0, 2],
+      [0, 12],
+      {
+        intentPoint: { h: 0, v: 4 },
+        preferredWidth: 2
+      }
+    );
+  });
+
+  test('DnD solve result should stay stable across permutations for vertical stack redistribution', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-top',
+        state: { hIndex: 0, vIndex: 2, hSpan: [0, 2] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'left-bottom',
+        state: { hIndex: 0, vIndex: 8, hSpan: [0, 2] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [6, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'top-terminal',
+        state: { hIndex: 4, vIndex: 1, hSpan: [4, 6] as [number, number], vSpan: [0, 4] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 4, vIndex: 5, hSpan: [4, 6] as [number, number], vSpan: [4, 8] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'bottom-terminal',
+        state: { hIndex: 4, vIndex: 9, hSpan: [4, 6] as [number, number], vSpan: [8, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'file-manager',
+        state: { hIndex: 2, vIndex: 1, hSpan: [2, 4] as [number, number], vSpan: [0, 3] as [number, number], lastDirection: null }
+      }
+    ];
+
+    expectStableDnDResultAcrossPermutations(
+      activeWindows,
+      'file-manager',
+      [4, 6],
+      [0, 3]
+    );
   });
 
   test('DnD transaction restore should give a carved neighbor its previous space when the inserted window is extracted', () => {

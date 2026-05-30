@@ -29,6 +29,12 @@ class TilePreview {
         else if (variant === 'blocked-out-of-bounds') {
             this.actor.set_style('background-color: rgba(155, 89, 182, 0.16); border: 2.5px dashed rgba(155, 89, 182, 0.94); border-radius: 8px;');
         }
+        else if (variant === 'swap-primary') {
+            this.actor.set_style('background-color: rgba(46, 204, 113, 0.24); border: 3px solid rgba(46, 204, 113, 0.98); border-radius: 8px;');
+        }
+        else if (variant === 'swap-secondary') {
+            this.actor.set_style('background-color: rgba(46, 204, 113, 0.12); border: 2.5px dashed rgba(46, 204, 113, 0.86); border-radius: 8px;');
+        }
         else if (isSecondary) {
             this.actor.set_style('background-color: rgba(52, 152, 219, 0.08); border: 1.5px dashed rgba(52, 152, 219, 0.5); border-radius: 6px;');
         }

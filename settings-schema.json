@@ -15,7 +15,7 @@
     "section_dnd": {
       "type": "section",
       "title": "Drag-and-Drop Snapping",
-      "keys": ["enable-dnd-tiling", "dnd-modifier-key", "experimentalSwapSameShapeWindows"]
+      "keys": ["enable-dnd-tiling", "dnd-modifier-key", "experimentalSwapSameShapeWindows", "dnd-swap-modifier-key"]
     },
     "section_keybindings": {
       "type": "section",
@@ -84,7 +84,12 @@
   "experimentalSwapSameShapeWindows": {
     "type": "switch",
     "default": false,
-    "description": "Experimental: swap equal-size tiled windows when dropping in the center of another window"
+    "description": "Experimental: enable modifier-driven window swap while dragging"
+  },
+  "dnd-swap-modifier-key": {
+    "type": "keybinding",
+    "default": "<Control><Shift>d",
+    "description": "Hold modifiers of this key during drag to swap with the tiled window under cursor"
   },
   "keybinding-tile-left": {
     "type": "keybinding",

@@ -8,6 +8,7 @@ export interface DragIntentPoint {
 
 export interface DragTransitionOptions {
   experimentalSwapSameShapeWindows?: boolean;
+  swapWindows?: boolean;
   intentPoint?: DragIntentPoint;
   preferredWidth?: number;
 }
@@ -797,53 +798,26 @@ export function calculateDragTransitions(
   };
 
   const maybeSwapWindows = (): Record<string, WindowState> | null => {
-    if (!options.experimentalSwapSameShapeWindows || !options.intentPoint) return null;
+    if (!options.swapWindows || !options.intentPoint) return null;
 
     const draggedWin = activeWindows.find(w => w.windowId === draggedId);
     if (!draggedWin) return null;
 
     const draggedState = draggedWin.state;
-    const sourceWidth = spanSize(draggedState.hSpan);
-    const sourceHeight = spanSize(draggedState.vSpan);
 
     const targetWin = otherWindows.find(w => {
       const state = w.state;
-      const containsPoint =
+      return (
         options.intentPoint!.h >= state.hSpan[0] &&
         options.intentPoint!.h <= state.hSpan[1] &&
         options.intentPoint!.v >= state.vSpan[0] &&
-        options.intentPoint!.v <= state.vSpan[1];
-
-      return containsPoint &&
-        spanSize(state.hSpan) === sourceWidth &&
-        spanSize(state.vSpan) === sourceHeight;
+        options.intentPoint!.v <= state.vSpan[1]
+      );
     });
 
     if (!targetWin) return null;
 
     const targetState = targetWin.state;
-    const shareVerticalEdge =
-      (draggedState.hSpan[1] === targetState.hSpan[0] || targetState.hSpan[1] === draggedState.hSpan[0]) &&
-      hasVerticalOverlap(draggedState.vSpan, targetState.vSpan);
-    const shareHorizontalEdge =
-      (draggedState.vSpan[1] === targetState.vSpan[0] || targetState.vSpan[1] === draggedState.vSpan[0]) &&
-      hasHorizontalOverlap(draggedState.hSpan, targetState.hSpan);
-    const isNeighbor = shareVerticalEdge || shareHorizontalEdge;
-
-    const marginRatio = isNeighbor ? 0.3 : 0.2;
-    const innerHStart = targetState.hSpan[0] + sourceWidth * marginRatio;
-    const innerHEnd = targetState.hSpan[1] - sourceWidth * marginRatio;
-    const innerVStart = targetState.vSpan[0] + sourceHeight * marginRatio;
-    const innerVEnd = targetState.vSpan[1] - sourceHeight * marginRatio;
-
-    const isCentralHit =
-      options.intentPoint.h >= innerHStart &&
-      options.intentPoint.h <= innerHEnd &&
-      options.intentPoint.v >= innerVStart &&
-      options.intentPoint.v <= innerVEnd;
-
-    if (!isCentralHit) return null;
-
     const swappedStates: Record<string, WindowState> = {};
     for (const w of activeWindows) {
       if (w.windowId === draggedId) {

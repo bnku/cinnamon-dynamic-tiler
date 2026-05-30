@@ -5,6 +5,7 @@ export interface DragIntentPoint {
 }
 export interface DragTransitionOptions {
     experimentalSwapSameShapeWindows?: boolean;
+    swapWindows?: boolean;
     intentPoint?: DragIntentPoint;
     preferredWidth?: number;
 }

@@ -30,6 +30,7 @@ class DynamicTilerExtension {
   public enablePreview!: boolean;
   public 'enable-dnd-tiling'!: boolean;
   public 'dnd-modifier-key'!: string;
+  public 'dnd-swap-modifier-key'!: string;
   public experimentalSwapSameShapeWindows!: boolean;
 
   public 'keybinding-tile-left'!: string;
@@ -88,6 +89,7 @@ class DynamicTilerExtension {
       this.settings.bindProperty(Settings.BindingDirection.IN, 'enablePreview', 'enablePreview', () => {});
       this.settings.bindProperty(Settings.BindingDirection.IN, 'enable-dnd-tiling', 'enable-dnd-tiling', () => {});
       this.settings.bindProperty(Settings.BindingDirection.IN, 'dnd-modifier-key', 'dnd-modifier-key', () => {});
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'dnd-swap-modifier-key', 'dnd-swap-modifier-key', () => {});
       this.settings.bindProperty(Settings.BindingDirection.IN, 'experimentalSwapSameShapeWindows', 'experimentalSwapSameShapeWindows', () => {});
 
       // Bind keybindings
@@ -407,35 +409,12 @@ class DynamicTilerExtension {
 
     try {
       const [mx, my, mods] = global.get_pointer();
-      
-      // Parse keybinding string from settings (e.g. "<Shift>d" or "d")
-      let hotkeySetting = this['dnd-modifier-key'] || '<Shift>d';
-      if (Array.isArray(hotkeySetting)) {
-        hotkeySetting = hotkeySetting[0] || '<Shift>d';
-      }
-      
-      const ctrl = hotkeySetting.includes('Control') || hotkeySetting.includes('Ctrl') || hotkeySetting.includes('Primary');
-      const shift = hotkeySetting.includes('Shift');
-      const alt = hotkeySetting.includes('Alt') || hotkeySetting.includes('Meta') || hotkeySetting.includes('Mod1');
-      const superKey = hotkeySetting.includes('Super') || hotkeySetting.includes('Mod4');
+      const isModifierPressed = this.isConfiguredModifierPressed(this['dnd-modifier-key'], '<Shift>d', mods);
+      const isSwapModifierPressed =
+        this.experimentalSwapSameShapeWindows === true &&
+        this.isConfiguredModifierPressed(this['dnd-swap-modifier-key'], '<Control><Shift>d', mods);
 
-      let isModifierPressed = false;
-      if (!ctrl && !shift && !alt && !superKey) {
-        isModifierPressed = true;
-      } else {
-        const ctrlPressed = (mods & Clutter.ModifierType.CONTROL_MASK) !== 0;
-        const shiftPressed = (mods & Clutter.ModifierType.SHIFT_MASK) !== 0;
-        const altPressed = (mods & Clutter.ModifierType.MOD1_MASK) !== 0;
-        const superPressed = (mods & Clutter.ModifierType.SUPER_MASK) !== 0;
-
-        isModifierPressed = true;
-        if (ctrl && !ctrlPressed) isModifierPressed = false;
-        if (shift && !shiftPressed) isModifierPressed = false;
-        if (alt && !altPressed) isModifierPressed = false;
-        if (superKey && !superPressed) isModifierPressed = false;
-      }
-
-      if (!isModifierPressed) {
+      if (!isModifierPressed && !isSwapModifierPressed) {
         if (this.dragSession && (this.dragSession.lastDragStates || (this.dragSession.dndEngaged && !this.dragSession.floated))) {
           const shouldExtract =
             this.dragSession.wasTiled === true &&
@@ -612,7 +591,7 @@ class DynamicTilerExtension {
         config,
         activeWindowsOnMonitor,
         {
-          experimentalSwapSameShapeWindows: this.experimentalSwapSameShapeWindows === true,
+          swapWindows: isSwapModifierPressed,
           intentPoint: dragTarget.intentPoint,
           preferredWidth: windowWidth
         }
@@ -729,9 +708,9 @@ class DynamicTilerExtension {
           if (win) {
             const monitorIndex = parseInt(activeMonitor.id);
             if (isDragged) {
-              preview.show(win, frameGeom, monitorIndex, true, 80, 200, false); // Bright focus landing
+              preview.show(win, frameGeom, monitorIndex, true, 80, 220, false, isSwapModifierPressed ? 'swap-primary' : 'normal');
             } else {
-              preview.show(win, frameGeom, monitorIndex, true, 80, 80, true); // Subtle secondary preview
+              preview.show(win, frameGeom, monitorIndex, true, 80, isSwapModifierPressed ? 170 : 80, true, isSwapModifierPressed ? 'swap-secondary' : 'normal');
             }
           }
         }
@@ -983,6 +962,33 @@ class DynamicTilerExtension {
     if (reason === 'tooSmall') return 'blocked-too-small';
     if (reason === 'outOfBounds') return 'blocked-out-of-bounds';
     return 'blocked-overlap';
+  }
+
+  private isConfiguredModifierPressed(settingValue: any, fallback: string, mods: number): boolean {
+    let hotkeySetting = settingValue || fallback;
+    if (Array.isArray(hotkeySetting)) {
+      hotkeySetting = hotkeySetting[0] || fallback;
+    }
+
+    const ctrl = hotkeySetting.includes('Control') || hotkeySetting.includes('Ctrl') || hotkeySetting.includes('Primary');
+    const shift = hotkeySetting.includes('Shift');
+    const alt = hotkeySetting.includes('Alt') || hotkeySetting.includes('Meta') || hotkeySetting.includes('Mod1');
+    const superKey = hotkeySetting.includes('Super') || hotkeySetting.includes('Mod4');
+
+    if (!ctrl && !shift && !alt && !superKey) {
+      return true;
+    }
+
+    const ctrlPressed = (mods & Clutter.ModifierType.CONTROL_MASK) !== 0;
+    const shiftPressed = (mods & Clutter.ModifierType.SHIFT_MASK) !== 0;
+    const altPressed = (mods & Clutter.ModifierType.MOD1_MASK) !== 0;
+    const superPressed = (mods & Clutter.ModifierType.SUPER_MASK) !== 0;
+
+    if (ctrl && !ctrlPressed) return false;
+    if (shift && !shiftPressed) return false;
+    if (alt && !altPressed) return false;
+    if (superKey && !superPressed) return false;
+    return true;
   }
 
   private restoreAndCollapseActiveWindow(): void {
