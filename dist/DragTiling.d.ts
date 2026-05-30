@@ -6,6 +6,7 @@ export interface DragIntentPoint {
 export interface DragTransitionOptions {
     experimentalSwapSameShapeWindows?: boolean;
     intentPoint?: DragIntentPoint;
+    preferredWidth?: number;
 }
 export type DragSolveStatus = 'valid' | 'blocked';
 export type DragBlockReason = 'wouldOverlap' | 'tooSmall' | 'outOfBounds';
@@ -39,6 +40,37 @@ export interface DragTargetResult {
     targetHSpan: [number, number];
     targetVSpan: [number, number];
     intentPoint: DragIntentPoint;
+    debug: DragTargetDebug;
+}
+export type DragTargetMode = 'base' | 'horizontal-stack' | 'vertical-stack';
+export interface DragTargetDebug {
+    mode: DragTargetMode;
+    preferredWidth: number;
+    preferredHeight: number;
+    targetWidth: number;
+    initialHSpan: [number, number];
+    initialVSpan: [number, number];
+    verticalCandidates: number;
+    horizontalCandidates: number;
+    shouldPreferVerticalStack: boolean;
+    verticalGroup?: {
+        hSpan: [number, number];
+        windows: number;
+        containsCursor: boolean;
+        hDistance: number;
+    };
+    horizontalGroup?: {
+        vSpan: [number, number];
+        windows: number;
+        containsCursor: boolean;
+        vDistance: number;
+    };
+    nearestBoundary?: number;
+    nearestDistance?: number;
+    slotWidth?: number;
+    horizontalThreshold?: number;
+    stackTargetHeight?: number;
+    boundaryThreshold?: number;
 }
 export declare function hasLayoutOverlaps(states: Record<string, WindowState>): boolean;
 export declare function solveDragTransitions(draggedId: string, targetHSpan: [number, number], targetVSpan: [number, number], config: Config, activeWindows: {

@@ -53,6 +53,7 @@ class DynamicTilerExtension {
     vacancyPreview = null;
     blockedPreview = null;
     lastDndTransaction = null;
+    lastDndDebugSignature = '';
     constructor(metadata) {
         this.metadata = metadata;
         this.shell = new CinnamonAdapters_1.CinnamonShellAdapter(this);
@@ -179,6 +180,7 @@ class DynamicTilerExtension {
             this.draggedWindowId = win.get_stable_sequence().toString();
             this.lastDragStates = null;
             this.lastDragMonitor = null;
+            this.lastDndDebugSignature = '';
             const cached = this.cache.getCachedWindow(this.draggedWindowId);
             const monitors = this.shell.getActiveMonitors();
             const geom = this.shell.getWindowGeometry(this.draggedWindowId);
@@ -438,21 +440,36 @@ class DynamicTilerExtension {
             // Determine the target sizes based on cache or physical size
             let windowWidth = Math.round(config.gridSize / 2);
             let windowHeight = config.gridSize;
+            let windowSizeSource = 'fallback';
             if (this.dragSession && this.dragSession.wasTiled && this.dragSession.sourceState) {
                 windowWidth = this.dragSession.sourceState.hSpan[1] - this.dragSession.sourceState.hSpan[0];
                 windowHeight = this.dragSession.sourceState.vSpan[1] - this.dragSession.sourceState.vSpan[0];
+                windowSizeSource = 'source-state';
             }
             else {
                 try {
-                    const geom = this.dragSession ? this.dragSession.sourceGeometry : this.shell.getWindowGeometry(this.draggedWindowId);
+                    const geom = this.shell.getWindowGeometry(this.draggedWindowId);
                     const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(geom, activeMonitor, config);
                     const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(geom, activeMonitor, config);
                     windowWidth = Math.max(config.minSpan, hSpan[1] - hSpan[0]);
                     windowHeight = Math.max(config.minSpan, vSpan[1] - vSpan[0]);
+                    windowSizeSource = 'current-geometry';
                 }
                 catch (e) {
-                    windowWidth = Math.round(config.gridSize / 2);
-                    windowHeight = Math.round(config.gridSize / 2);
+                    try {
+                        if (!this.dragSession || !this.dragSession.sourceGeometry)
+                            throw e;
+                        const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(this.dragSession.sourceGeometry, activeMonitor, config);
+                        const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(this.dragSession.sourceGeometry, activeMonitor, config);
+                        windowWidth = Math.max(config.minSpan, hSpan[1] - hSpan[0]);
+                        windowHeight = Math.max(config.minSpan, vSpan[1] - vSpan[0]);
+                        windowSizeSource = 'source-geometry';
+                    }
+                    catch {
+                        windowWidth = Math.round(config.gridSize / 2);
+                        windowHeight = Math.round(config.gridSize / 2);
+                        windowSizeSource = 'fallback';
+                    }
                 }
             }
             // Scan all other normal windows on this monitor to build the activeWindowsOnMonitor list first,
@@ -509,9 +526,11 @@ class DynamicTilerExtension {
             // Calculate the elastic pushes
             const dragResult = (0, DragTiling_1.solveDragTransitions)(this.draggedWindowId, dragTarget.targetHSpan, dragTarget.targetVSpan, config, activeWindowsOnMonitor, {
                 experimentalSwapSameShapeWindows: this.experimentalSwapSameShapeWindows === true,
-                intentPoint: dragTarget.intentPoint
+                intentPoint: dragTarget.intentPoint,
+                preferredWidth: windowWidth
             });
             const dragStates = dragResult.states;
+            this.logDndDecision(dragTarget, dragResult, windowWidth, windowHeight, windowSizeSource, activeWindowsOnMonitor);
             if (dragResult.status === 'blocked') {
                 this.clearPlacementPreviews();
                 this.lastDragStates = null;
@@ -541,7 +560,6 @@ class DynamicTilerExtension {
                     }
                 }
                 catch (e) { }
-                global.log(`[Dynamic Tiler] DnD blocked: ${dragResult.reason || 'unknown'}`);
                 return true;
             }
             this.clearBlockedPreview();
@@ -645,6 +663,7 @@ class DynamicTilerExtension {
             this.lastDragStates = null;
             this.lastDragMonitor = null;
             this.dragSession = null;
+            this.lastDndDebugSignature = '';
             return;
         }
         global.log(`[Dynamic Tiler] Window drag ended. Active ID: ${this.draggedWindowId}`);
@@ -734,6 +753,7 @@ class DynamicTilerExtension {
         this.lastDragStates = null;
         this.lastDragMonitor = null;
         this.dragSession = null;
+        this.lastDndDebugSignature = '';
     }
     collapseAndApplyVacancy(draggedId, monitor, config, monitors) {
         try {
@@ -831,6 +851,64 @@ class DynamicTilerExtension {
         catch (e) {
             global.logError(`[Dynamic Tiler] Failed to restore and collapse window: ${e.message}`);
         }
+    }
+    logDndDecision(dragTarget, dragResult, windowWidth, windowHeight, windowSizeSource, activeWindows) {
+        const debug = dragTarget.debug;
+        const signature = [
+            dragResult.status,
+            dragResult.reason || 'ok',
+            debug.mode,
+            windowSizeSource,
+            `${windowWidth}x${windowHeight}`,
+            this.formatSpan(dragTarget.targetHSpan),
+            this.formatSpan(dragTarget.targetVSpan),
+            debug.nearestBoundary === undefined ? '-' : debug.nearestBoundary,
+            debug.slotWidth === undefined ? '-' : debug.slotWidth,
+            debug.nearestDistance === undefined ? '-' : debug.nearestDistance.toFixed(2)
+        ].join('|');
+        if (signature === this.lastDndDebugSignature) {
+            return;
+        }
+        this.lastDndDebugSignature = signature;
+        if (dragResult.status !== 'blocked' && debug.mode === 'base') {
+            return;
+        }
+        const horizontalGroup = debug.horizontalGroup
+            ? `${this.formatSpan(debug.horizontalGroup.vSpan)} windows=${debug.horizontalGroup.windows} contains=${debug.horizontalGroup.containsCursor} dist=${debug.horizontalGroup.vDistance.toFixed(2)}`
+            : '-';
+        const verticalGroup = debug.verticalGroup
+            ? `${this.formatSpan(debug.verticalGroup.hSpan)} windows=${debug.verticalGroup.windows} contains=${debug.verticalGroup.containsCursor} dist=${debug.verticalGroup.hDistance.toFixed(2)}`
+            : '-';
+        global.log(`[Dynamic Tiler] DnD trace status=${dragResult.status}` +
+            ` reason=${dragResult.reason || 'ok'}` +
+            ` dragged=${this.draggedWindowId}` +
+            ` size=${windowWidth}x${windowHeight}` +
+            ` sizeSource=${windowSizeSource}` +
+            ` intent=${debug.preferredWidth}x${debug.preferredHeight}` +
+            ` pointer=${dragTarget.intentPoint.h.toFixed(2)},${dragTarget.intentPoint.v.toFixed(2)}` +
+            ` mode=${debug.mode}` +
+            ` initial=${this.formatSpan(debug.initialHSpan)}x${this.formatSpan(debug.initialVSpan)}` +
+            ` target=${this.formatSpan(dragTarget.targetHSpan)}x${this.formatSpan(dragTarget.targetVSpan)}` +
+            ` hCandidates=${debug.horizontalCandidates}` +
+            ` vCandidates=${debug.verticalCandidates}` +
+            ` preferV=${debug.shouldPreferVerticalStack}` +
+            ` hGroup=${horizontalGroup}` +
+            ` vGroup=${verticalGroup}` +
+            ` boundary=${debug.nearestBoundary === undefined ? '-' : debug.nearestBoundary}` +
+            ` distance=${debug.nearestDistance === undefined ? '-' : debug.nearestDistance.toFixed(2)}` +
+            ` slot=${debug.slotWidth === undefined ? '-' : debug.slotWidth}` +
+            ` hThreshold=${debug.horizontalThreshold === undefined ? '-' : debug.horizontalThreshold.toFixed(2)}` +
+            ` stackHeight=${debug.stackTargetHeight === undefined ? '-' : debug.stackTargetHeight}` +
+            ` boundaryThreshold=${debug.boundaryThreshold === undefined ? '-' : debug.boundaryThreshold.toFixed(2)}` +
+            ` active=[${this.formatDndWindows(activeWindows)}]`);
+    }
+    formatSpan(span) {
+        return `${span[0]}-${span[1]}`;
+    }
+    formatDndWindows(windows) {
+        return windows
+            .map(w => `${w.windowId}:${this.formatSpan(w.state.hSpan)}x${this.formatSpan(w.state.vSpan)}`)
+            .join(',');
     }
     stopDragTimer() {
         if (this.dragTimerId) {

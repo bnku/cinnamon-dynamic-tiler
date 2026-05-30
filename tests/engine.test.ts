@@ -1021,6 +1021,181 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(target.targetVSpan).toEqual([4, 8]);
   });
 
+  test('DnD target computation should adopt a narrow stack width when a wide window is dragged into that stack', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'top-terminal',
+        state: { hIndex: 10, vIndex: 2, hSpan: [10, 12] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'bottom-terminal',
+        state: { hIndex: 10, vIndex: 8, hSpan: [10, 12] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'wide-file-manager',
+      mx: xForCol(11),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 8,
+      preferredHeight: 12,
+      activeWindows
+    });
+
+    expect(target.targetHSpan).toEqual([10, 12]);
+    expect(target.targetVSpan).toEqual([4, 8]);
+  });
+
+  test('DnD target computation should offer edge insertion for a horizontal stack at the screen edge', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 6, vIndex: 5, hSpan: [6, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 8, vIndex: 5, hSpan: [8, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'new-terminal',
+      mx: xForCol(11.8),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 2,
+      preferredHeight: 12,
+      activeWindows
+    });
+
+    expect(target.targetHSpan).toEqual([10, 12]);
+    expect(target.targetVSpan).toEqual([0, 12]);
+  });
+
+  test('DnD target computation should shrink a wide window to the edge slot width for horizontal stack insertion', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 6, vIndex: 5, hSpan: [6, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 8, vIndex: 5, hSpan: [8, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'wide-file-manager',
+      mx: xForCol(11.8),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 8,
+      preferredHeight: 12,
+      activeWindows
+    });
+
+    expect(target.targetHSpan).toEqual([10, 12]);
+    expect(target.targetVSpan).toEqual([0, 12]);
+  });
+
+  test('DnD target computation should shrink a wide window into a single edge neighbor slot when the cursor is at the screen edge', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'wide-file-manager',
+      mx: xForCol(11.8),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 8,
+      preferredHeight: 12,
+      activeWindows
+    });
+
+    expect(target.targetHSpan).toEqual([10, 12]);
+    expect(target.targetVSpan).toEqual([0, 12]);
+  });
+
+  test('DnD target computation should shrink a wide clamped window into a single edge slot even when the cursor is not at the screen edge', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'wide-file-manager',
+      mx: xForCol(9),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 8,
+      preferredHeight: 12,
+      activeWindows
+    });
+
+    expect(target.targetHSpan).toEqual([10, 12]);
+    expect(target.targetVSpan).toEqual([0, 12]);
+  });
+
+  test('DnD target computation should shrink an interior horizontal insertion when the edge neighbor cannot donate enough space', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 6, vIndex: 5, hSpan: [4, 9] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-editor',
+        state: { hIndex: 10, vIndex: 5, hSpan: [9, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'terminal',
+      mx: xForCol(9.2),
+      my: yForRow(3.2),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 3,
+      preferredHeight: 7,
+      activeWindows
+    });
+
+    expect(target.targetHSpan).toEqual([8, 10]);
+    expect(target.targetVSpan).toEqual([0, 12]);
+    expect(target.debug.slotWidth).toBe(2);
+  });
+
   test('DnD target computation should not offer stack insertion when min sizes cannot fit another window', () => {
     const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
     const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
@@ -1056,6 +1231,204 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     });
 
     expect(target.targetVSpan).toEqual([0, 12]);
+  });
+
+  test('DnD should relocate a pinned narrow stack horizontally when inserting into a tight vertical boundary', () => {
+    const activeWindows = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 6, vIndex: 5, hSpan: [4, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'top-terminal',
+        state: { hIndex: 10, vIndex: 0, hSpan: [10, 12] as [number, number], vSpan: [0, 2] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'bottom-terminal',
+        state: { hIndex: 10, vIndex: 2, hSpan: [10, 12] as [number, number], vSpan: [2, 4] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'wide-file-manager',
+      [10, 12],
+      [1, 3],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['wide-file-manager'].hSpan).toEqual([10, 12]);
+    expect(result['wide-file-manager'].vSpan).toEqual([1, 3]);
+    expect(result['top-terminal'].hSpan).toEqual([8, 10]);
+    expect(result['bottom-terminal'].hSpan).toEqual([8, 10]);
+    expect(result['chrome'].hSpan).toEqual([4, 8]);
+    expect(hasLayoutOverlaps(result)).toBe(false);
+  });
+
+  test('DnD should shift a horizontal edge stack inward when inserting between the outer window and screen edge', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 6, vIndex: 5, hSpan: [6, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 8, vIndex: 5, hSpan: [8, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'new-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['new-terminal'].hSpan).toEqual([10, 12]);
+    expect(result['left-terminal'].hSpan).toEqual([4, 6]);
+    expect(result['middle-terminal'].hSpan).toEqual([6, 8]);
+    expect(result['right-terminal'].hSpan).toEqual([8, 10]);
+    expect(hasLayoutOverlaps(result)).toBe(false);
+  });
+
+  test('DnD should shift a horizontal edge stack inward for a wide dragged window that has been narrowed to the slot', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 6, vIndex: 5, hSpan: [6, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 8, vIndex: 5, hSpan: [8, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'wide-file-manager',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['wide-file-manager'].hSpan).toEqual([10, 12]);
+    expect(result['left-terminal'].hSpan).toEqual([4, 6]);
+    expect(result['middle-terminal'].hSpan).toEqual([6, 8]);
+    expect(result['right-terminal'].hSpan).toEqual([8, 10]);
+    expect(hasLayoutOverlaps(result)).toBe(false);
+  });
+
+  test('DnD should shift a single edge neighbor inward only for an explicit screen-edge insertion intent', () => {
+    const activeWindows = [
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const centeredDrop = solveDragTransitions(
+      'wide-file-manager',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      { intentPoint: { h: 11, v: 6 } }
+    );
+    const edgeDrop = solveDragTransitions(
+      'wide-file-manager',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      { intentPoint: { h: 11.8, v: 6 } }
+    );
+
+    expect(centeredDrop.status).toBe('blocked');
+    expect(edgeDrop.status).toBe('valid');
+    expect(edgeDrop.states['wide-file-manager'].hSpan).toEqual([10, 12]);
+    expect(edgeDrop.states['right-panel'].hSpan).toEqual([8, 10]);
+    expect(hasLayoutOverlaps(edgeDrop.states)).toBe(false);
+  });
+
+  test('DnD should shift a single edge neighbor inward when a wide clamped window was narrowed to the edge slot', () => {
+    const activeWindows = [
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = solveDragTransitions(
+      'wide-file-manager',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        intentPoint: { h: 9, v: 6 },
+        preferredWidth: 8
+      }
+    );
+
+    expect(result.status).toBe('valid');
+    expect(result.states['wide-file-manager'].hSpan).toEqual([10, 12]);
+    expect(result.states['right-panel'].hSpan).toEqual([8, 10]);
+    expect(hasLayoutOverlaps(result.states)).toBe(false);
+  });
+
+  test('DnD should insert between full-height neighbors by narrowing the dragged slot instead of blocking', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-top',
+        state: { hIndex: 2, vIndex: 1, hSpan: [2, 4] as [number, number], vSpan: [0, 4] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'left-middle',
+        state: { hIndex: 2, vIndex: 5, hSpan: [2, 4] as [number, number], vSpan: [4, 8] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'left-bottom',
+        state: { hIndex: 2, vIndex: 9, hSpan: [2, 4] as [number, number], vSpan: [8, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 6, vIndex: 5, hSpan: [4, 9] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-editor',
+        state: { hIndex: 10, vIndex: 5, hSpan: [9, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = solveDragTransitions(
+      'terminal',
+      [8, 10],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        intentPoint: { h: 9.2, v: 3.2 },
+        preferredWidth: 3
+      }
+    );
+
+    expect(result.status).toBe('valid');
+    expect(result.states['chrome'].hSpan).toEqual([4, 8]);
+    expect(result.states['terminal'].hSpan).toEqual([8, 10]);
+    expect(result.states['right-editor'].hSpan).toEqual([10, 12]);
+    expect(result.states['left-top'].hSpan).toEqual([2, 4]);
+    expect(result.states['left-middle'].hSpan).toEqual([2, 4]);
+    expect(result.states['left-bottom'].hSpan).toEqual([2, 4]);
+    expect(hasLayoutOverlaps(result.states)).toBe(false);
   });
 
   test('DnD experimental swap should exchange non-neighbor windows with the same grid shape', () => {
