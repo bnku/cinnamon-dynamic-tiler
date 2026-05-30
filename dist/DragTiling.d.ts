@@ -23,6 +23,13 @@ export interface DragTransactionSnapshot {
     afterStates: Record<string, WindowState>;
     affected: string[];
 }
+export interface ExtractionIntentInput {
+    pointerX: number;
+    pointerY: number;
+    startPointerX: number;
+    startPointerY: number;
+    thresholdPixels?: number;
+}
 export interface DragTargetInput {
     draggedId: string;
     mx: number;
@@ -35,6 +42,7 @@ export interface DragTargetInput {
         windowId: string;
         state: WindowState;
     }[];
+    previousTarget?: DragTargetResult | null;
 }
 export interface DragTargetResult {
     targetHSpan: [number, number];
@@ -72,6 +80,7 @@ export interface DragTargetDebug {
     stackTargetHeight?: number;
     boundaryThreshold?: number;
 }
+export declare function shouldFloatAfterModifierRelease(input: ExtractionIntentInput): boolean;
 export declare function hasLayoutOverlaps(states: Record<string, WindowState>): boolean;
 export declare function solveDragTransitions(draggedId: string, targetHSpan: [number, number], targetVSpan: [number, number], config: Config, activeWindows: {
     windowId: string;

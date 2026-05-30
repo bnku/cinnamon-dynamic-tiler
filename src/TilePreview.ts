@@ -29,13 +29,17 @@ export class TilePreview {
     animTime?: number,
     customOpacity?: number,
     isSecondary?: boolean,
-    variant?: 'normal' | 'blocked'
+    variant?: 'normal' | 'blocked' | 'blocked-overlap' | 'blocked-too-small' | 'blocked-out-of-bounds'
   ) {
     this.anim_time = animTime || 150;
 
     // Apply appropriate styling based on whether it is the primary focus landing or secondary shifted window
-    if (variant === 'blocked') {
+    if (variant === 'blocked' || variant === 'blocked-overlap') {
       this.actor.set_style('background-color: rgba(231, 76, 60, 0.16); border: 2.5px dashed rgba(231, 76, 60, 0.92); border-radius: 8px;');
+    } else if (variant === 'blocked-too-small') {
+      this.actor.set_style('background-color: rgba(243, 156, 18, 0.18); border: 2.5px dashed rgba(243, 156, 18, 0.94); border-radius: 8px;');
+    } else if (variant === 'blocked-out-of-bounds') {
+      this.actor.set_style('background-color: rgba(155, 89, 182, 0.16); border: 2.5px dashed rgba(155, 89, 182, 0.94); border-radius: 8px;');
     } else if (isSecondary) {
       this.actor.set_style('background-color: rgba(52, 152, 219, 0.08); border: 1.5px dashed rgba(52, 152, 219, 0.5); border-radius: 6px;');
     } else {

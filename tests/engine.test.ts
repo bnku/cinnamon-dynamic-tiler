@@ -1,5 +1,5 @@
 import { TilingEngine } from '../src/core/TilingEngine';
-import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps, restoreDragTransaction, solveDragTransitions } from '../src/DragTiling';
+import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps, restoreDragTransaction, shouldFloatAfterModifierRelease, solveDragTransitions } from '../src/DragTiling';
 import { ScreenInfo, WindowState, Config } from '../src/core/types';
 
 describe('TilingEngine - 12-Column Layout Calculations', () => {
@@ -678,6 +678,32 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(chain['winB'].hSpan).toEqual([6, 8]);
   });
 
+  test('should expand an anchored left sibling when the active right-edge window shrinks', () => {
+    const leftStack = {
+      windowId: 'leftStack',
+      state: { hIndex: 2, vIndex: 5, hSpan: [2, 4] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const chrome = {
+      windowId: 'chrome',
+      state: { hIndex: 5, vIndex: 5, hSpan: [4, 6] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+    const chat = {
+      windowId: 'chat',
+      state: { hIndex: 8, vIndex: 5, hSpan: [6, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: 'right' as const }
+    };
+
+    const chain = TilingEngine.calculateChainTransitions(
+      'chat',
+      'right',
+      fakeConfig,
+      [leftStack, chrome, chat]
+    );
+
+    expect(chain['chat'].hSpan).toEqual([8, 12]);
+    expect(chain['chrome'].hSpan).toEqual([4, 8]);
+    expect(chain['leftStack'].hSpan).toEqual([2, 4]);
+  });
+
   test('should handle first shift-up keypress', () => {
     const startState = TilingEngine.getDefaultState();
     const nextState = TilingEngine.calculateNextState(startState, 'shift-up', fakeConfig);
@@ -992,6 +1018,48 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(bottomTarget.targetVSpan).toEqual([6, 12]);
   });
 
+  test('DnD target computation should keep magnetic height intent across small boundary jitter', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRatio = (ratio: number) => fakeScreen.workarea.y + fakeScreen.workarea.height * ratio;
+
+    const topTarget = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(3),
+      my: yForRatio(0.27),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 2,
+      preferredHeight: 12,
+      activeWindows: []
+    });
+    const jitterTarget = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(3),
+      my: yForRatio(0.30),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 2,
+      preferredHeight: 12,
+      activeWindows: [],
+      previousTarget: topTarget
+    });
+    const releasedTarget = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(3),
+      my: yForRatio(0.33),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 2,
+      preferredHeight: 12,
+      activeWindows: [],
+      previousTarget: jitterTarget
+    });
+
+    expect(topTarget.targetVSpan).toEqual([0, 6]);
+    expect(jitterTarget.targetVSpan).toEqual([0, 6]);
+    expect(releasedTarget.targetVSpan).toEqual([0, 12]);
+  });
+
   test('DnD target computation should turn a cursor near a stack boundary into an insertion slot', () => {
     const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
     const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
@@ -1019,6 +1087,58 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
 
     expect(target.targetHSpan).toEqual([0, 12]);
     expect(target.targetVSpan).toEqual([4, 8]);
+  });
+
+  test('DnD target computation should keep a vertical stack insertion while the cursor jitters just outside the boundary threshold', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'top',
+        state: { hIndex: 5, vIndex: 2, hSpan: [0, 12] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'bottom',
+        state: { hIndex: 5, vIndex: 8, hSpan: [0, 12] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const insertedTarget = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(6),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 12,
+      preferredHeight: 12,
+      activeWindows
+    });
+    const jitterTarget = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(6),
+      my: yForRow(8.2),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 12,
+      preferredHeight: 12,
+      activeWindows,
+      previousTarget: insertedTarget
+    });
+    const releasedTarget = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(6),
+      my: yForRow(8.8),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 12,
+      preferredHeight: 12,
+      activeWindows,
+      previousTarget: jitterTarget
+    });
+
+    expect(insertedTarget.targetVSpan).toEqual([4, 8]);
+    expect(jitterTarget.targetVSpan).toEqual([4, 8]);
+    expect(releasedTarget.targetVSpan).toEqual([6, 12]);
   });
 
   test('DnD target computation should adopt a narrow stack width when a wide window is dragged into that stack', () => {
@@ -1166,6 +1286,56 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(target.targetVSpan).toEqual([0, 12]);
   });
 
+  test('DnD target computation should shrink a medium clamped window into a single edge slot beside a minimum edge neighbor', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'file-manager',
+      mx: xForCol(9),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 4,
+      preferredHeight: 12,
+      activeWindows
+    });
+
+    expect(target.targetHSpan).toEqual([10, 12]);
+    expect(target.targetVSpan).toEqual([0, 12]);
+  });
+
+  test('DnD target computation should offer the edge slot when both dragged and edge neighbor are minimum width', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'file-manager',
+      mx: xForCol(9),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 2,
+      preferredHeight: 12,
+      activeWindows
+    });
+
+    expect(target.targetHSpan).toEqual([10, 12]);
+    expect(target.targetVSpan).toEqual([0, 12]);
+  });
+
   test('DnD target computation should shrink an interior horizontal insertion when the edge neighbor cannot donate enough space', () => {
     const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
     const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
@@ -1194,6 +1364,58 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(target.targetHSpan).toEqual([8, 10]);
     expect(target.targetVSpan).toEqual([0, 12]);
     expect(target.debug.slotWidth).toBe(2);
+  });
+
+  test('DnD target computation should keep a horizontal insertion while the cursor jitters toward the next boundary', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'left',
+        state: { hIndex: 5, vIndex: 5, hSpan: [4, 8] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right',
+        state: { hIndex: 10, vIndex: 5, hSpan: [8, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const insertedTarget = computeDragTarget({
+      draggedId: 'terminal',
+      mx: xForCol(8),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 4,
+      preferredHeight: 12,
+      activeWindows
+    });
+    const jitterTarget = computeDragTarget({
+      draggedId: 'terminal',
+      mx: xForCol(10.2),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 4,
+      preferredHeight: 12,
+      activeWindows,
+      previousTarget: insertedTarget
+    });
+    const releasedTarget = computeDragTarget({
+      draggedId: 'terminal',
+      mx: xForCol(10.5),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 4,
+      preferredHeight: 12,
+      activeWindows,
+      previousTarget: jitterTarget
+    });
+
+    expect(insertedTarget.targetHSpan).toEqual([6, 10]);
+    expect(jitterTarget.targetHSpan).toEqual([6, 10]);
+    expect(releasedTarget.targetHSpan).toEqual([8, 12]);
   });
 
   test('DnD target computation should not offer stack insertion when min sizes cannot fit another window', () => {
@@ -1382,6 +1604,160 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(result.status).toBe('valid');
     expect(result.states['wide-file-manager'].hSpan).toEqual([10, 12]);
     expect(result.states['right-panel'].hSpan).toEqual([8, 10]);
+    expect(hasLayoutOverlaps(result.states)).toBe(false);
+  });
+
+  test('DnD should shift a minimum edge neighbor inward for a medium clamped edge insertion', () => {
+    const activeWindows = [
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = solveDragTransitions(
+      'file-manager',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        intentPoint: { h: 9, v: 6 },
+        preferredWidth: 4
+      }
+    );
+
+    expect(result.status).toBe('valid');
+    expect(result.states['file-manager'].hSpan).toEqual([10, 12]);
+    expect(result.states['right-panel'].hSpan).toEqual([8, 10]);
+    expect(hasLayoutOverlaps(result.states)).toBe(false);
+  });
+
+  test('DnD should shift a minimum edge neighbor inward even when the dragged window is already minimum width', () => {
+    const activeWindows = [
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = solveDragTransitions(
+      'file-manager',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        intentPoint: { h: 12, v: 6 },
+        preferredWidth: 2
+      }
+    );
+
+    expect(result.status).toBe('valid');
+    expect(result.states['file-manager'].hSpan).toEqual([10, 12]);
+    expect(result.states['right-panel'].hSpan).toEqual([8, 10]);
+    expect(hasLayoutOverlaps(result.states)).toBe(false);
+  });
+
+  test('DnD should make an edge slot by shrinking the inner neighbor instead of translating the whole row into other columns', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-top',
+        state: { hIndex: 2, vIndex: 1, hSpan: [2, 4] as [number, number], vSpan: [0, 4] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'left-middle',
+        state: { hIndex: 2, vIndex: 5, hSpan: [2, 4] as [number, number], vSpan: [4, 8] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'left-bottom',
+        state: { hIndex: 2, vIndex: 9, hSpan: [2, 4] as [number, number], vSpan: [8, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = solveDragTransitions(
+      'file-manager',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        intentPoint: { h: 12, v: 6 },
+        preferredWidth: 2
+      }
+    );
+
+    expect(result.status).toBe('valid');
+    expect(result.states['file-manager'].hSpan).toEqual([10, 12]);
+    expect(result.states['right-panel'].hSpan).toEqual([8, 10]);
+    expect(result.states.chrome.hSpan).toEqual([4, 8]);
+    expect(result.states['left-top'].hSpan).toEqual([2, 4]);
+    expect(result.states['left-middle'].hSpan).toEqual([2, 4]);
+    expect(result.states['left-bottom'].hSpan).toEqual([2, 4]);
+    expect(hasLayoutOverlaps(result.states)).toBe(false);
+  });
+
+  test('DnD should make a left edge slot by shifting a minimum-width corridor and shrinking the first wide donor', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-top',
+        state: { hIndex: 0, vIndex: 2, hSpan: [0, 2] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'left-bottom',
+        state: { hIndex: 0, vIndex: 8, hSpan: [0, 2] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-top',
+        state: { hIndex: 2, vIndex: 1, hSpan: [2, 4] as [number, number], vSpan: [0, 4] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-mid',
+        state: { hIndex: 2, vIndex: 5, hSpan: [2, 4] as [number, number], vSpan: [4, 8] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-bottom',
+        state: { hIndex: 2, vIndex: 9, hSpan: [2, 4] as [number, number], vSpan: [8, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = solveDragTransitions(
+      'file-manager',
+      [0, 2],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        intentPoint: { h: 0, v: 4 },
+        preferredWidth: 2
+      }
+    );
+
+    expect(result.status).toBe('valid');
+    expect(result.states['file-manager'].hSpan).toEqual([0, 2]);
+    expect(result.states['left-top'].hSpan).toEqual([2, 4]);
+    expect(result.states['left-bottom'].hSpan).toEqual([2, 4]);
+    expect(result.states['middle-top'].hSpan).toEqual([4, 6]);
+    expect(result.states['middle-mid'].hSpan).toEqual([4, 6]);
+    expect(result.states['middle-bottom'].hSpan).toEqual([4, 6]);
+    expect(result.states.chrome.hSpan).toEqual([6, 10]);
+    expect(result.states['right-panel'].hSpan).toEqual([10, 12]);
     expect(hasLayoutOverlaps(result.states)).toBe(false);
   });
 
@@ -1787,5 +2163,30 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     );
 
     expect(restored).toBeNull();
+  });
+
+  test('DnD extraction intent should ignore accidental modifier release near the source slot', () => {
+    expect(shouldFloatAfterModifierRelease({
+      pointerX: 1040,
+      pointerY: 520,
+      startPointerX: 980,
+      startPointerY: 500
+    })).toBe(false);
+
+    expect(shouldFloatAfterModifierRelease({
+      pointerX: 901,
+      pointerY: 500,
+      startPointerX: 980,
+      startPointerY: 500
+    })).toBe(false);
+  });
+
+  test('DnD extraction intent should float only after the pointer leaves the source slot decisively', () => {
+    expect(shouldFloatAfterModifierRelease({
+      pointerX: 1061,
+      pointerY: 530,
+      startPointerX: 980,
+      startPointerY: 500
+    })).toBe(true);
   });
 });

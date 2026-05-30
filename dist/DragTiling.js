@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.shouldFloatAfterModifierRelease = shouldFloatAfterModifierRelease;
 exports.hasLayoutOverlaps = hasLayoutOverlaps;
 exports.solveDragTransitions = solveDragTransitions;
 exports.restoreDragTransaction = restoreDragTransaction;
@@ -9,6 +10,14 @@ exports.collapseVacancy = collapseVacancy;
 const TilingEngine_1 = require("./core/TilingEngine");
 function hasSpanOverlap(spanA, spanB) {
     return Math.max(spanA[0], spanB[0]) < Math.min(spanA[1], spanB[1]);
+}
+function spansEqual(spanA, spanB) {
+    return Boolean(spanA && spanB && spanA[0] === spanB[0] && spanA[1] === spanB[1]);
+}
+function shouldFloatAfterModifierRelease(input) {
+    const distance = Math.hypot(input.pointerX - input.startPointerX, input.pointerY - input.startPointerY);
+    const movementThreshold = input.thresholdPixels ?? 80;
+    return distance >= movementThreshold;
 }
 function hasLayoutOverlaps(states) {
     const entries = Object.entries(states);
@@ -137,10 +146,14 @@ function computeDragTarget(input) {
     const ratioY = (my - workarea.y) / workarea.height;
     const midGrid = Math.round(config.gridSize / 2);
     let targetVSpan;
-    if (ratioY < 0.28) {
+    const previousVSpan = input.previousTarget?.targetVSpan;
+    const shouldKeepTopHalf = spansEqual(previousVSpan, [0, midGrid]) && ratioY < 0.32;
+    const shouldKeepBottomHalf = spansEqual(previousVSpan, [midGrid, config.gridSize]) && ratioY > 0.68;
+    const shouldKeepFullHeight = spansEqual(previousVSpan, [0, config.gridSize]) && ratioY >= 0.24 && ratioY <= 0.76;
+    if (shouldKeepTopHalf || (!shouldKeepBottomHalf && !shouldKeepFullHeight && ratioY < 0.28)) {
         targetVSpan = [0, midGrid];
     }
-    else if (ratioY > 0.72) {
+    else if (shouldKeepBottomHalf || (!shouldKeepTopHalf && !shouldKeepFullHeight && ratioY > 0.72)) {
         targetVSpan = [midGrid, config.gridSize];
     }
     else {
@@ -231,7 +244,20 @@ function computeDragTarget(input) {
     }
     const nearHorizontalScreenEdge = intentPoint.h <= 0.65 ||
         intentPoint.h >= config.gridSize - 0.65;
-    const targetTouchesHorizontalScreenEdge = targetHSpan[0] <= 0 || targetHSpan[1] >= config.gridSize;
+    const targetOverlapsLeftEdgeWindow = allStackWindowCandidates.some(w => w.state.hSpan[0] <= 0 &&
+        w.state.hSpan[1] - w.state.hSpan[0] <= config.minSpan &&
+        targetHSpan[0] <= w.state.hSpan[1] + 1 &&
+        hasSpanOverlap(targetVSpan, w.state.vSpan) &&
+        intentPoint.h <= w.state.hSpan[1] + 1);
+    const targetOverlapsRightEdgeWindow = allStackWindowCandidates.some(w => w.state.hSpan[1] >= config.gridSize &&
+        w.state.hSpan[1] - w.state.hSpan[0] <= config.minSpan &&
+        targetHSpan[1] >= w.state.hSpan[0] - 1 &&
+        hasSpanOverlap(targetVSpan, w.state.vSpan) &&
+        intentPoint.h >= w.state.hSpan[0] - 1);
+    const targetTouchesHorizontalScreenEdge = targetHSpan[0] <= 0 ||
+        targetHSpan[1] >= config.gridSize ||
+        targetOverlapsLeftEdgeWindow ||
+        targetOverlapsRightEdgeWindow;
     const horizontalGroupCandidates = Array.from(horizontalGroups.values())
         .filter(group => group.windows.length >= 2 || nearHorizontalScreenEdge || targetTouchesHorizontalScreenEdge)
         .map(group => {
@@ -292,11 +318,11 @@ function computeDragTarget(input) {
             .sort((a, b) => a - b);
         let nearestBoundary = uniqueBoundaries[0];
         let nearestDistance = Math.abs(cursorCol - nearestBoundary);
-        if (targetHSpan[0] <= 0) {
+        if (targetHSpan[0] <= 0 || targetOverlapsLeftEdgeWindow) {
             nearestBoundary = 0;
             nearestDistance = Math.abs(cursorCol);
         }
-        else if (targetHSpan[1] >= config.gridSize) {
+        else if (targetHSpan[1] >= config.gridSize || targetOverlapsRightEdgeWindow) {
             nearestBoundary = config.gridSize;
             nearestDistance = Math.abs(cursorCol - config.gridSize);
         }
@@ -307,6 +333,20 @@ function computeDragTarget(input) {
                     nearestBoundary = boundary;
                     nearestDistance = distance;
                 }
+            }
+        }
+        let usesStickyHorizontalBoundary = false;
+        const previousHorizontalBoundary = input.previousTarget?.debug.mode === 'horizontal-stack' &&
+            spansEqual(input.previousTarget.targetVSpan, cursorHorizontalGroup.vSpan)
+            ? input.previousTarget.debug.nearestBoundary
+            : undefined;
+        if (previousHorizontalBoundary !== undefined && uniqueBoundaries.includes(previousHorizontalBoundary)) {
+            const previousDistance = Math.abs(cursorCol - previousHorizontalBoundary);
+            const previousExitThreshold = Math.max(1, input.previousTarget?.debug.horizontalThreshold ?? 1) + 0.35;
+            if (previousDistance <= previousExitThreshold) {
+                nearestBoundary = previousHorizontalBoundary;
+                nearestDistance = previousDistance;
+                usesStickyHorizontalBoundary = true;
             }
         }
         const adjacentWindows = cursorHorizontalGroup.windows
@@ -345,15 +385,21 @@ function computeDragTarget(input) {
         const isWideTargetClampedToEdge = isScreenEdgeBoundary &&
             targetWidth > slotWidth &&
             ((nearestBoundary <= 0 && targetHSpan[0] <= 0) ||
-                (nearestBoundary >= config.gridSize && targetHSpan[1] >= config.gridSize));
+                (nearestBoundary <= 0 && targetOverlapsLeftEdgeWindow) ||
+                (nearestBoundary >= config.gridSize && targetHSpan[1] >= config.gridSize) ||
+                (nearestBoundary >= config.gridSize && targetOverlapsRightEdgeWindow));
+        const isMinimumEdgeNeighborInsertion = isScreenEdgeBoundary &&
+            (targetOverlapsLeftEdgeWindow || targetOverlapsRightEdgeWindow);
         const horizontalThreshold = isScreenEdgeBoundary
-            ? (isWideTargetClampedToEdge ? Math.max(0.65, targetWidth / 2) : Math.min(0.65, Math.max(0.35, slotWidth / 3)))
+            ? (isWideTargetClampedToEdge || isMinimumEdgeNeighborInsertion
+                ? Math.max(0.65, targetWidth / 2 + slotWidth / 2, config.minSpan + 1)
+                : Math.min(0.65, Math.max(0.35, slotWidth / 3)))
             : Math.max(1, requestedSlotWidth / 2);
         debug.nearestBoundary = nearestBoundary;
         debug.nearestDistance = nearestDistance;
         debug.slotWidth = slotWidth;
         debug.horizontalThreshold = horizontalThreshold;
-        if (nearestDistance <= horizontalThreshold) {
+        if (nearestDistance <= horizontalThreshold || usesStickyHorizontalBoundary) {
             targetVSpan = [...cursorHorizontalGroup.vSpan];
             if (nearestBoundary <= 0) {
                 targetHSpan = [0, slotWidth];
@@ -410,7 +456,21 @@ function computeDragTarget(input) {
             const boundaryThreshold = Math.max(1, stackTargetHeight / 2);
             const canFitStackVertically = (columnStackWindows.length + 1) * config.minSpan <= config.gridSize;
             const canUseHorizontalRelief = Boolean(cursorStackGroup && cursorStackGroup.width < config.gridSize);
-            if (nearestDistance <= boundaryThreshold && (canFitStackVertically || canUseHorizontalRelief)) {
+            let usesStickyVerticalBoundary = false;
+            const previousVerticalBoundary = input.previousTarget?.debug.mode === 'vertical-stack' &&
+                cursorStackGroup &&
+                spansEqual(input.previousTarget.targetHSpan, cursorStackGroup.hSpan)
+                ? input.previousTarget.debug.nearestBoundary
+                : undefined;
+            if (previousVerticalBoundary !== undefined && uniqueBoundaries.includes(previousVerticalBoundary)) {
+                const previousDistance = Math.abs(cursorRow - previousVerticalBoundary);
+                if (previousDistance <= boundaryThreshold + 0.35) {
+                    nearestBoundary = previousVerticalBoundary;
+                    nearestDistance = previousDistance;
+                    usesStickyVerticalBoundary = true;
+                }
+            }
+            if ((nearestDistance <= boundaryThreshold || usesStickyVerticalBoundary) && (canFitStackVertically || canUseHorizontalRelief)) {
                 debug.nearestBoundary = nearestBoundary;
                 debug.nearestDistance = nearestDistance;
                 debug.stackTargetHeight = stackTargetHeight;
@@ -865,8 +925,111 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         }
         return false;
     };
+    const tryCarveEdgeInsertionCorridor = () => {
+        if (!options.intentPoint)
+            return false;
+        if (spanSize(targetVSpan) < config.minSpan)
+            return false;
+        const targetTouchesLeftEdge = targetHSpan[0] <= 0;
+        const targetTouchesRightEdge = targetHSpan[1] >= config.gridSize;
+        const intentNearLeftEdge = options.intentPoint.h <= 0.65;
+        const intentNearRightEdge = options.intentPoint.h >= config.gridSize - 0.65;
+        const isExplicitScreenEdgeInsertion = (targetTouchesLeftEdge && intentNearLeftEdge) ||
+            (targetTouchesRightEdge && intentNearRightEdge);
+        const isAutoNarrowedScreenEdgeInsertion = Boolean(options.preferredWidth && options.preferredWidth > spanSize(targetHSpan)) &&
+            (targetTouchesLeftEdge || targetTouchesRightEdge);
+        if (!isExplicitScreenEdgeInsertion && !isAutoNarrowedScreenEdgeInsertion) {
+            return false;
+        }
+        if (!targetTouchesLeftEdge && !targetTouchesRightEdge)
+            return false;
+        const corridorWidth = spanSize(targetHSpan);
+        const direction = targetTouchesLeftEdge ? 1 : -1;
+        let cursorStart = targetTouchesLeftEdge ? targetHSpan[0] : targetHSpan[1] - corridorWidth;
+        let cursorEnd = targetTouchesLeftEdge ? targetHSpan[1] : targetHSpan[1];
+        const chainIds = new Set();
+        let donorId = null;
+        for (let guard = 0; guard < config.gridSize; guard++) {
+            const columnWindows = otherWindows
+                .filter(w => {
+                const state = states[w.windowId];
+                return state.hSpan[0] === cursorStart &&
+                    state.hSpan[1] === cursorEnd &&
+                    hasVerticalOverlap(state.vSpan, targetVSpan);
+            })
+                .sort((a, b) => a.windowId.localeCompare(b.windowId));
+            if (columnWindows.length === 0) {
+                const donorWindow = otherWindows
+                    .filter(w => {
+                    const state = states[w.windowId];
+                    if (!hasVerticalOverlap(state.vSpan, targetVSpan))
+                        return false;
+                    if (spanSize(state.hSpan) - corridorWidth < config.minSpan)
+                        return false;
+                    return targetTouchesLeftEdge
+                        ? state.hSpan[0] === cursorStart
+                        : state.hSpan[1] === cursorEnd;
+                })
+                    .sort((a, b) => {
+                    const aSize = spanSize(states[a.windowId].hSpan);
+                    const bSize = spanSize(states[b.windowId].hSpan);
+                    return bSize - aSize || a.windowId.localeCompare(b.windowId);
+                })[0];
+                if (donorWindow) {
+                    donorId = donorWindow.windowId;
+                }
+                break;
+            }
+            const columnWidth = cursorEnd - cursorStart;
+            if (columnWidth <= corridorWidth) {
+                for (const w of columnWindows) {
+                    chainIds.add(w.windowId);
+                }
+                cursorStart += direction * corridorWidth;
+                cursorEnd += direction * corridorWidth;
+                if (cursorStart < 0 || cursorEnd > config.gridSize)
+                    return false;
+                continue;
+            }
+            if (columnWidth - corridorWidth < config.minSpan) {
+                return false;
+            }
+            donorId = columnWindows[0].windowId;
+            break;
+        }
+        if (chainIds.size === 0)
+            return false;
+        const candidateStates = {};
+        for (const [id, state] of Object.entries(states)) {
+            candidateStates[id] = cloneState(state);
+        }
+        for (const id of chainIds) {
+            const state = candidateStates[id];
+            state.hSpan = [state.hSpan[0] + direction * corridorWidth, state.hSpan[1] + direction * corridorWidth];
+            updateIndexes(state);
+        }
+        if (donorId) {
+            const donor = candidateStates[donorId];
+            donor.hSpan = targetTouchesLeftEdge
+                ? [donor.hSpan[0] + corridorWidth, donor.hSpan[1]]
+                : [donor.hSpan[0], donor.hSpan[1] - corridorWidth];
+            updateIndexes(donor);
+        }
+        if (getDragBlockReason(candidateStates, config)) {
+            return false;
+        }
+        for (const [id, nextState] of Object.entries(candidateStates)) {
+            if (!statesEqual(states[id], nextState)) {
+                states[id] = cloneState(nextState);
+                touched.add(id);
+            }
+        }
+        return true;
+    };
     tryRelocateTightVerticalStack();
-    tryRelocateTightHorizontalStack();
+    if (!tryCarveEdgeInsertionCorridor()) {
+        tryRelocateTightHorizontalStack();
+    }
     const windowsToProcess = otherWindows;
     // Recursive left push
     const pushLeft = (id, rightBoundary) => {

@@ -31,6 +31,7 @@ class TilingUseCase {
         const activeWindowsOnMonitor = [];
         // Проверяем Smart Reset (ручное изменение размеров) только для самого АКТИВНОГО окна
         let activeWindowIsResized = false;
+        let activeWindowPhysicalState = null;
         const activeCached = allCached[windowId];
         if (activeCached) {
             try {
@@ -49,6 +50,21 @@ class TilingUseCase {
                 const THRESHOLD = 80;
                 if (diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD) {
                     activeWindowIsResized = true;
+                    const currentMonitor = this.shell.findMonitorForWindow(currentVisible, monitors);
+                    const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(currentVisible, currentMonitor, config);
+                    const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(currentVisible, currentMonitor, config);
+                    activeWindowPhysicalState = {
+                        state: {
+                            ...activeCached.state,
+                            hSpan,
+                            vSpan,
+                            hIndex: TilingEngine_1.TilingEngine.spanToHIndex(hSpan),
+                            vIndex: TilingEngine_1.TilingEngine.spanToVIndex(vSpan)
+                        },
+                        visibleGeometry: currentVisible,
+                        frameGeometry: currentGeom,
+                        monitor: currentMonitor
+                    };
                 }
             }
             catch {
@@ -56,9 +72,6 @@ class TilingUseCase {
             }
         }
         for (const id of visibleWindowIds) {
-            if (id === windowId && activeWindowIsResized) {
-                continue;
-            }
             let cachedWin = allCached[id];
             if (!cachedWin) {
                 try {
@@ -133,48 +146,55 @@ class TilingUseCase {
             let windowState = { ...cachedWin.state };
             let currentMonitor = activeMonitor;
             let currentGeom = cachedWin.tiledGeometry;
-            try {
-                currentGeom = this.shell.getWindowGeometry(id);
-                const ext = this.shell.getFrameExtents(id);
-                const currentVisible = {
-                    x: currentGeom.x + ext.left,
-                    y: currentGeom.y + ext.top,
-                    width: currentGeom.width - ext.left - ext.right,
-                    height: currentGeom.height - ext.top - ext.bottom,
-                };
-                currentMonitor = this.shell.findMonitorForWindow(currentVisible, monitors);
-                if (id !== windowId) {
-                    if (currentMonitor.id !== activeMonitor.id) {
-                        continue;
-                    }
-                    const diffX = Math.abs(currentVisible.x - cachedWin.tiledGeometry.x);
-                    const diffY = Math.abs(currentVisible.y - cachedWin.tiledGeometry.y);
-                    const diffW = Math.abs(currentVisible.width - cachedWin.tiledGeometry.width);
-                    const diffH = Math.abs(currentVisible.height - cachedWin.tiledGeometry.height);
-                    const THRESHOLD = 80;
-                    if (diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD) {
-                        const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(currentVisible, currentMonitor, config);
-                        const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(currentVisible, currentMonitor, config);
-                        windowState = {
-                            ...cachedWin.state,
-                            hSpan,
-                            vSpan,
-                            hIndex: TilingEngine_1.TilingEngine.spanToHIndex(hSpan),
-                            vIndex: TilingEngine_1.TilingEngine.spanToVIndex(vSpan)
-                        };
-                        this.cache.saveState(id, windowState, currentVisible, cachedWin.originalGeometry || currentGeom);
+            if (id === windowId && activeWindowIsResized && activeWindowPhysicalState) {
+                windowState = activeWindowPhysicalState.state;
+                currentMonitor = activeWindowPhysicalState.monitor;
+                currentGeom = activeWindowPhysicalState.frameGeometry;
+                this.cache.saveState(id, windowState, activeWindowPhysicalState.visibleGeometry, cachedWin.originalGeometry || currentGeom);
+            }
+            else {
+                try {
+                    currentGeom = this.shell.getWindowGeometry(id);
+                    const ext = this.shell.getFrameExtents(id);
+                    const currentVisible = {
+                        x: currentGeom.x + ext.left,
+                        y: currentGeom.y + ext.top,
+                        width: currentGeom.width - ext.left - ext.right,
+                        height: currentGeom.height - ext.top - ext.bottom,
+                    };
+                    currentMonitor = this.shell.findMonitorForWindow(currentVisible, monitors);
+                    if (id !== windowId) {
+                        if (currentMonitor.id !== activeMonitor.id) {
+                            continue;
+                        }
+                        const diffX = Math.abs(currentVisible.x - cachedWin.tiledGeometry.x);
+                        const diffY = Math.abs(currentVisible.y - cachedWin.tiledGeometry.y);
+                        const diffW = Math.abs(currentVisible.width - cachedWin.tiledGeometry.width);
+                        const diffH = Math.abs(currentVisible.height - cachedWin.tiledGeometry.height);
+                        const THRESHOLD = 80;
+                        if (diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD) {
+                            const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(currentVisible, currentMonitor, config);
+                            const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(currentVisible, currentMonitor, config);
+                            windowState = {
+                                ...cachedWin.state,
+                                hSpan,
+                                vSpan,
+                                hIndex: TilingEngine_1.TilingEngine.spanToHIndex(hSpan),
+                                vIndex: TilingEngine_1.TilingEngine.spanToVIndex(vSpan)
+                            };
+                            this.cache.saveState(id, windowState, currentVisible, cachedWin.originalGeometry || currentGeom);
+                        }
                     }
                 }
-            }
-            catch {
-                currentMonitor = this.shell.findMonitorForWindow(cachedWin.tiledGeometry, monitors);
-                if (id !== windowId && currentMonitor.id !== activeMonitor.id) {
-                    continue;
+                catch {
+                    currentMonitor = this.shell.findMonitorForWindow(cachedWin.tiledGeometry, monitors);
+                    if (id !== windowId && currentMonitor.id !== activeMonitor.id) {
+                        continue;
+                    }
                 }
             }
             if (id === windowId) {
-                const monitor = this.shell.findMonitorForWindow(cachedWin.tiledGeometry, monitors);
-                if (monitor.id !== activeMonitor.id)
+                if (currentMonitor.id !== activeMonitor.id)
                     continue;
             }
             const isOldStateSchema = typeof windowState.hIndex !== 'number' || typeof windowState.vIndex !== 'number';

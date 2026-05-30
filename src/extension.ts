@@ -1,7 +1,7 @@
 import { TilingEngine } from './core/TilingEngine';
 import { TilingUseCase } from './core/usecases/TilingUseCase';
 import { CinnamonShellAdapter, CinnamonCache, CinnamonConfigProvider } from './CinnamonAdapters';
-import { collapseVacancy, computeDragTarget, restoreDragTransaction, solveDragTransitions, type DragSolveResult, type DragTargetResult, type DragTransactionSnapshot } from './DragTiling';
+import { collapseVacancy, computeDragTarget, restoreDragTransaction, shouldFloatAfterModifierRelease, solveDragTransitions, type DragBlockReason, type DragSolveResult, type DragTargetResult, type DragTransactionSnapshot } from './DragTiling';
 import { TilePreview } from './TilePreview';
 import { WindowState } from './core/types';
 
@@ -58,6 +58,7 @@ class DynamicTilerExtension {
   private blockedPreview: TilePreview | null = null;
   private lastDndTransaction: DragTransactionSnapshot | null = null;
   private lastDndDebugSignature: string = '';
+  private lastDragTarget: DragTargetResult | null = null;
 
   constructor(metadata: any) {
     this.metadata = metadata;
@@ -197,6 +198,7 @@ class DynamicTilerExtension {
       this.lastDragStates = null;
       this.lastDragMonitor = null;
       this.lastDndDebugSignature = '';
+      this.lastDragTarget = null;
 
       const cached = this.cache.getCachedWindow(this.draggedWindowId);
       const monitors = this.shell.getActiveMonitors();
@@ -210,6 +212,8 @@ class DynamicTilerExtension {
         sourceState: cached ? { ...cached.state } : null,
         sourceGeometry: cached ? { ...cached.originalGeometry } : { ...geom },
         sourceTiledGeometry: cached ? { ...cached.tiledGeometry } : null,
+        startPointerX: 0,
+        startPointerY: 0,
         lastDragStates: null,
         lastDragBeforeStates: null,
         lastDragAffected: [],
@@ -221,9 +225,13 @@ class DynamicTilerExtension {
       // Calculate mouse offset relative to top-left corner of the dragged window
       try {
         const [mx, my] = global.get_pointer();
+        this.dragSession.startPointerX = mx;
+        this.dragSession.startPointerY = my;
         this.dragOffsetX = mx - geom.x;
         this.dragOffsetY = my - geom.y;
       } catch (err) {
+        this.dragSession.startPointerX = geom.x + Math.round(geom.width / 2);
+        this.dragSession.startPointerY = geom.y + Math.round(geom.height / 2);
         this.dragOffsetX = 0;
         this.dragOffsetY = 0;
       }
@@ -429,11 +437,21 @@ class DynamicTilerExtension {
 
       if (!isModifierPressed) {
         if (this.dragSession && (this.dragSession.lastDragStates || (this.dragSession.dndEngaged && !this.dragSession.floated))) {
+          const shouldExtract =
+            this.dragSession.wasTiled === true &&
+            this.dragSession.sourceTiledGeometry &&
+            shouldFloatAfterModifierRelease({
+              pointerX: mx,
+              pointerY: my,
+              startPointerX: this.dragSession.startPointerX,
+              startPointerY: this.dragSession.startPointerY
+            });
+
           this.clearPreviews();
           this.dragSession.lastDragStates = null;
           this.dragSession.lastDragBeforeStates = null;
           this.dragSession.lastDragAffected = [];
-          this.dragSession.floated = this.dragSession.wasTiled === true;
+          this.dragSession.floated = shouldExtract === true;
           this.dragSession.cancelled = !this.dragSession.floated;
           this.dragSession.dndEngaged = false;
           this.lastDragStates = null;
@@ -455,16 +473,31 @@ class DynamicTilerExtension {
               this.dragOffsetY = 15;
             }
           } catch (err) {}
+
+          if (shouldExtract && this.dragSession.sourceTiledGeometry) {
+            try {
+              if (!this.vacancyPreview) {
+                this.vacancyPreview = new TilePreview();
+              }
+              const win = (this.shell as any)._findMetaWindow(this.draggedWindowId);
+              if (win) {
+                const sourceMonitorIndex = parseInt(this.dragSession.sourceMonitor.id);
+                this.vacancyPreview.show(win, this.dragSession.sourceTiledGeometry, sourceMonitorIndex, true, 80, 60, true);
+              }
+            } catch (err) {}
+          }
         } else {
           this.clearPreviews();
         }
 
         this.lastDragStates = null;
         this.lastDragMonitor = null;
+        this.lastDragTarget = null;
         return true;
       }
 
       const monitors = this.shell.getActiveMonitors();
+      const previousDragMonitorId = this.lastDragMonitor ? String(this.lastDragMonitor.id) : null;
       let activeMonitor = monitors[0];
       for (const m of monitors) {
         if (mx >= m.workarea.x && mx < m.workarea.x + m.workarea.width &&
@@ -472,6 +505,9 @@ class DynamicTilerExtension {
           activeMonitor = m;
           break;
         }
+      }
+      if (previousDragMonitorId !== null && previousDragMonitorId !== String(activeMonitor.id)) {
+        this.lastDragTarget = null;
       }
       this.lastDragMonitor = activeMonitor;
       if (this.dragSession) {
@@ -564,7 +600,8 @@ class DynamicTilerExtension {
         config,
         preferredWidth: windowWidth,
         preferredHeight: windowHeight,
-        activeWindows: activeWindowsOnMonitor
+        activeWindows: activeWindowsOnMonitor,
+        previousTarget: this.lastDragTarget
       });
 
       // Calculate the elastic pushes
@@ -615,7 +652,16 @@ class DynamicTilerExtension {
               lastDirection: null
             };
             const frameGeom = TilingEngine.stateToGeometry(blockedState, activeMonitor, config);
-            this.blockedPreview.show(win, frameGeom, parseInt(activeMonitor.id), true, 80, 140, false, 'blocked');
+            this.blockedPreview.show(
+              win,
+              frameGeom,
+              parseInt(activeMonitor.id),
+              true,
+              80,
+              140,
+              false,
+              this.getBlockedPreviewVariant(dragResult.reason)
+            );
           }
         } catch (e) {}
         return true;
@@ -623,6 +669,7 @@ class DynamicTilerExtension {
 
       this.clearBlockedPreview();
       this.lastDragStates = dragStates;
+      this.lastDragTarget = dragTarget;
       if (this.dragSession) {
         const beforeStates: Record<string, WindowState> = {};
         for (const activeWindow of activeWindowsOnMonitor) {
@@ -731,6 +778,7 @@ class DynamicTilerExtension {
       this.lastDragMonitor = null;
       this.dragSession = null;
       this.lastDndDebugSignature = '';
+      this.lastDragTarget = null;
       return;
     }
 
@@ -833,6 +881,7 @@ class DynamicTilerExtension {
     this.lastDragMonitor = null;
     this.dragSession = null;
     this.lastDndDebugSignature = '';
+    this.lastDragTarget = null;
   }
 
   private collapseAndApplyVacancy(draggedId: string, monitor: any, config: any, monitors: any): void {
@@ -919,6 +968,12 @@ class DynamicTilerExtension {
     } catch (err: any) {
       global.logError(`[Dynamic Tiler] Failed to collapse and apply vacancy: ${err.message}`);
     }
+  }
+
+  private getBlockedPreviewVariant(reason?: DragBlockReason): 'blocked-overlap' | 'blocked-too-small' | 'blocked-out-of-bounds' {
+    if (reason === 'tooSmall') return 'blocked-too-small';
+    if (reason === 'outOfBounds') return 'blocked-out-of-bounds';
+    return 'blocked-overlap';
   }
 
   private restoreAndCollapseActiveWindow(): void {

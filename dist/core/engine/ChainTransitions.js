@@ -103,8 +103,14 @@ class ChainTransitions {
                         newSpans[i][1] = origEnd + allowedShift;
                     }
                     else if (shift < 0) {
-                        const isClampedToEdge = origEnd === config.gridSize;
-                        newSpans[i][1] = isClampedToEdge ? origEnd : origEnd + shift;
+                        const hasRightAnchor = sortedWins.some(other => {
+                            if (other.windowId === currWin.windowId)
+                                return false;
+                            const hasVSpanOverlap = Math.max(other.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(other.state.vSpan[1], currWin.state.vSpan[1]);
+                            return other.state.hSpan[0] === origEnd && hasVSpanOverlap;
+                        });
+                        const isAnchored = origEnd === config.gridSize || hasRightAnchor;
+                        newSpans[i][1] = isAnchored ? origEnd : origEnd + shift;
                     }
                     const width = newSpans[i][1] - newSpans[i][0];
                     if (width < MIN_WIDTH) {
@@ -151,8 +157,14 @@ class ChainTransitions {
                         newSpans[i][0] = origStart - allowedShift;
                     }
                     else if (shift < 0) {
-                        const isClampedToEdge = origStart === 0;
-                        newSpans[i][0] = isClampedToEdge ? origStart : origStart - shift;
+                        const hasLeftAnchor = sortedWins.some(other => {
+                            if (other.windowId === currWin.windowId)
+                                return false;
+                            const hasVSpanOverlap = Math.max(other.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(other.state.vSpan[1], currWin.state.vSpan[1]);
+                            return other.state.hSpan[1] === origStart && hasVSpanOverlap;
+                        });
+                        const isAnchored = origStart === 0 || hasLeftAnchor;
+                        newSpans[i][0] = isAnchored ? origStart : origStart - shift;
                     }
                     const width = newSpans[i][1] - newSpans[i][0];
                     if (width < MIN_WIDTH) {
@@ -230,8 +242,14 @@ class ChainTransitions {
                         newSpans[i][1] = origEnd + allowedShift;
                     }
                     else if (shift < 0) {
-                        const isClampedToEdge = origEnd === config.gridSize;
-                        newSpans[i][1] = isClampedToEdge ? origEnd : origEnd + shift;
+                        const hasBottomAnchor = sortedWins.some(other => {
+                            if (other.windowId === currWin.windowId)
+                                return false;
+                            const hasHSpanOverlap = Math.max(other.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(other.state.hSpan[1], currWin.state.hSpan[1]);
+                            return other.state.vSpan[0] === origEnd && hasHSpanOverlap;
+                        });
+                        const isAnchored = origEnd === config.gridSize || hasBottomAnchor;
+                        newSpans[i][1] = isAnchored ? origEnd : origEnd + shift;
                     }
                     const height = newSpans[i][1] - newSpans[i][0];
                     if (height < MIN_HEIGHT) {
@@ -278,8 +296,14 @@ class ChainTransitions {
                         newSpans[i][0] = origStart - allowedShift;
                     }
                     else if (shift < 0) {
-                        const isClampedToEdge = origStart === 0;
-                        newSpans[i][0] = isClampedToEdge ? origStart : origStart - shift;
+                        const hasTopAnchor = sortedWins.some(other => {
+                            if (other.windowId === currWin.windowId)
+                                return false;
+                            const hasHSpanOverlap = Math.max(other.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(other.state.hSpan[1], currWin.state.hSpan[1]);
+                            return other.state.vSpan[1] === origStart && hasHSpanOverlap;
+                        });
+                        const isAnchored = origStart === 0 || hasTopAnchor;
+                        newSpans[i][0] = isAnchored ? origStart : origStart - shift;
                     }
                     const height = newSpans[i][1] - newSpans[i][0];
                     if (height < MIN_HEIGHT) {
