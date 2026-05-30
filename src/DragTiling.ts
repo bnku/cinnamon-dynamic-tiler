@@ -110,6 +110,26 @@ export function shouldFloatAfterModifierRelease(input: ExtractionIntentInput): b
   return distance >= movementThreshold;
 }
 
+export function shouldCancelSourceReturn(
+  sourceState: WindowState | null | undefined,
+  targetHSpan: [number, number],
+  targetVSpan: [number, number],
+  intentPoint?: DragIntentPoint
+): boolean {
+  if (!sourceState) return false;
+
+  if (intentPoint &&
+      intentPoint.h >= sourceState.hSpan[0] &&
+      intentPoint.h <= sourceState.hSpan[1] &&
+      intentPoint.v >= sourceState.vSpan[0] &&
+      intentPoint.v <= sourceState.vSpan[1]) {
+    return true;
+  }
+
+  return spansEqual(sourceState.hSpan, targetHSpan) &&
+    spansEqual(sourceState.vSpan, targetVSpan);
+}
+
 export function hasLayoutOverlaps(states: Record<string, WindowState>): boolean {
   const entries = Object.entries(states);
   for (let i = 0; i < entries.length; i++) {

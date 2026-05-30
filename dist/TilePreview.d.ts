@@ -10,7 +10,7 @@ export declare class TilePreview {
         y: number;
         width: number;
         height: number;
-    }, monitorIndex: number, animate: boolean, animTime?: number, customOpacity?: number, isSecondary?: boolean, variant?: 'normal' | 'blocked' | 'blocked-overlap' | 'blocked-too-small' | 'blocked-out-of-bounds' | 'swap-primary' | 'swap-secondary'): void;
+    }, monitorIndex: number, animate: boolean, animTime?: number, customOpacity?: number, isSecondary?: boolean, variant?: 'normal' | 'blocked' | 'blocked-overlap' | 'blocked-too-small' | 'blocked-out-of-bounds' | 'swap-primary' | 'swap-secondary', startFromWindow?: boolean): void;
     hide(): void;
     private _reset;
     destroy(): void;

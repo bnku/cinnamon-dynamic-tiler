@@ -86,6 +86,7 @@ export interface DragTargetDebug {
     boundaryThreshold?: number;
 }
 export declare function shouldFloatAfterModifierRelease(input: ExtractionIntentInput): boolean;
+export declare function shouldCancelSourceReturn(sourceState: WindowState | null | undefined, targetHSpan: [number, number], targetVSpan: [number, number], intentPoint?: DragIntentPoint): boolean;
 export declare function hasLayoutOverlaps(states: Record<string, WindowState>): boolean;
 export declare function solveDragTransitions(draggedId: string, targetHSpan: [number, number], targetVSpan: [number, number], config: Config, activeWindows: {
     windowId: string;

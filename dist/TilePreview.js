@@ -17,7 +17,7 @@ class TilePreview {
         global.window_group.add_actor(this.actor);
         this._reset();
     }
-    show(window, tileRect, monitorIndex, animate, animTime, customOpacity, isSecondary, variant) {
+    show(window, tileRect, monitorIndex, animate, animTime, customOpacity, isSecondary, variant, startFromWindow = true) {
         this.anim_time = animTime || 150;
         // Apply appropriate styling based on whether it is the primary focus landing or secondary shifted window
         if (variant === 'blocked' || variant === 'blocked-overlap') {
@@ -61,7 +61,9 @@ class TilePreview {
                     width: monitor.width,
                     height: monitor.height
                 });
-                const [intersected, rect] = window.get_buffer_rect().intersect(monitorRect);
+                const [intersected, rect] = startFromWindow
+                    ? window.get_buffer_rect().intersect(monitorRect)
+                    : [false, null];
                 if (intersected) {
                     this.actor.set_size(rect.width, rect.height);
                     this.actor.set_position(rect.x, rect.y);

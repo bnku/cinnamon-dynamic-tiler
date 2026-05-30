@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.shouldFloatAfterModifierRelease = shouldFloatAfterModifierRelease;
+exports.shouldCancelSourceReturn = shouldCancelSourceReturn;
 exports.hasLayoutOverlaps = hasLayoutOverlaps;
 exports.solveDragTransitions = solveDragTransitions;
 exports.restoreDragTransaction = restoreDragTransaction;
@@ -19,6 +20,19 @@ function shouldFloatAfterModifierRelease(input) {
     const distance = Math.hypot(input.pointerX - input.startPointerX, input.pointerY - input.startPointerY);
     const movementThreshold = input.thresholdPixels ?? 80;
     return distance >= movementThreshold;
+}
+function shouldCancelSourceReturn(sourceState, targetHSpan, targetVSpan, intentPoint) {
+    if (!sourceState)
+        return false;
+    if (intentPoint &&
+        intentPoint.h >= sourceState.hSpan[0] &&
+        intentPoint.h <= sourceState.hSpan[1] &&
+        intentPoint.v >= sourceState.vSpan[0] &&
+        intentPoint.v <= sourceState.vSpan[1]) {
+        return true;
+    }
+    return spansEqual(sourceState.hSpan, targetHSpan) &&
+        spansEqual(sourceState.vSpan, targetVSpan);
 }
 function hasLayoutOverlaps(states) {
     const entries = Object.entries(states);

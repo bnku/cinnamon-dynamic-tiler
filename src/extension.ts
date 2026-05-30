@@ -1,7 +1,7 @@
 import { TilingEngine } from './core/TilingEngine';
 import { TilingUseCase } from './core/usecases/TilingUseCase';
 import { CinnamonShellAdapter, CinnamonCache, CinnamonConfigProvider } from './CinnamonAdapters';
-import { collapseVacancy, computeDragTarget, restoreDragTransactionHistory, shouldFloatAfterModifierRelease, solveDragTransitions, type DragBlockReason, type DragSolveResult, type DragTargetResult, type DragTransactionSnapshot } from './DragTiling';
+import { collapseVacancy, computeDragTarget, restoreDragTransactionHistory, shouldCancelSourceReturn, shouldFloatAfterModifierRelease, solveDragTransitions, type DragBlockReason, type DragSolveResult, type DragTargetResult, type DragTransactionSnapshot } from './DragTiling';
 import { TilePreview } from './TilePreview';
 import { WindowState } from './core/types';
 
@@ -583,6 +583,45 @@ class DynamicTilerExtension {
         previousTarget: this.lastDragTarget
       });
 
+      if (
+        this.dragSession &&
+        this.dragSession.wasTiled &&
+        this.dragSession.sourceMonitor &&
+        String(this.dragSession.sourceMonitor.id) === String(activeMonitor.id) &&
+        !isSwapModifierPressed &&
+        shouldCancelSourceReturn(this.dragSession.sourceState, dragTarget.targetHSpan, dragTarget.targetVSpan, dragTarget.intentPoint)
+      ) {
+        const sourceState = this.dragSession.sourceState;
+        const signature = `source-return:${this.draggedWindowId}:${sourceState.hSpan.join('-')}x${sourceState.vSpan.join('-')}:target=${dragTarget.targetHSpan.join('-')}x${dragTarget.targetVSpan.join('-')}:intent=${dragTarget.intentPoint.h.toFixed(2)},${dragTarget.intentPoint.v.toFixed(2)}`;
+        if (signature !== this.lastDndDebugSignature) {
+          this.lastDndDebugSignature = signature;
+          global.log(`[Dynamic Tiler] DnD source-return cancel dragged=${this.draggedWindowId} source=${sourceState.hSpan.join('-')}x${sourceState.vSpan.join('-')} target=${dragTarget.targetHSpan.join('-')}x${dragTarget.targetVSpan.join('-')} intent=${dragTarget.intentPoint.h.toFixed(2)},${dragTarget.intentPoint.v.toFixed(2)}`);
+        }
+        this.clearBlockedPreview();
+        this.clearPlacementPreviewsExcept(this.draggedWindowId);
+        try {
+          let preview = this.previewsMap[this.draggedWindowId];
+          if (!preview) {
+            preview = new TilePreview();
+            this.previewsMap[this.draggedWindowId] = preview;
+          }
+          const win = (this.shell as any)._findMetaWindow(this.draggedWindowId);
+          if (win) {
+            const frameGeom = TilingEngine.stateToGeometry(this.dragSession.sourceState, activeMonitor, config);
+            preview.show(win, frameGeom, parseInt(activeMonitor.id), false, 80, 220, false, 'normal', false);
+          }
+        } catch (err) {}
+        this.lastDragStates = null;
+        this.lastDragTarget = dragTarget;
+        this.dragSession.lastDragStates = null;
+        this.dragSession.lastDragBeforeStates = null;
+        this.dragSession.lastDragAffected = [];
+        this.dragSession.cancelled = true;
+        this.dragSession.floated = false;
+        this.dragSession.dndEngaged = false;
+        return true;
+      }
+
       // Calculate the elastic pushes
       const dragResult = solveDragTransitions(
         this.draggedWindowId,
@@ -1112,6 +1151,25 @@ class DynamicTilerExtension {
       } catch (e) {}
     }
     this.previewsMap = {};
+
+    if (this.vacancyPreview) {
+      try {
+        this.vacancyPreview.hide();
+        this.vacancyPreview.destroy();
+      } catch (e) {}
+      this.vacancyPreview = null;
+    }
+  }
+
+  private clearPlacementPreviewsExcept(keepId: string): void {
+    for (const [id, preview] of Object.entries(this.previewsMap)) {
+      if (id === keepId) continue;
+      try {
+        preview.hide();
+        preview.destroy();
+      } catch (e) {}
+      delete this.previewsMap[id];
+    }
 
     if (this.vacancyPreview) {
       try {

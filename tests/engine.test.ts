@@ -1,5 +1,5 @@
 import { TilingEngine } from '../src/core/TilingEngine';
-import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps, restoreDragTransaction, restoreDragTransactionHistory, shouldFloatAfterModifierRelease, solveDragTransitions } from '../src/DragTiling';
+import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps, restoreDragTransaction, restoreDragTransactionHistory, shouldCancelSourceReturn, shouldFloatAfterModifierRelease, solveDragTransitions } from '../src/DragTiling';
 import { ScreenInfo, WindowState, Config } from '../src/core/types';
 
 describe('TilingEngine - 12-Column Layout Calculations', () => {
@@ -2749,5 +2749,21 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
       startPointerX: 980,
       startPointerY: 500
     })).toBe(true);
+  });
+
+  test('DnD extraction should cancel when the dragged tiled window returns to its source slot', () => {
+    const sourceState: WindowState = {
+      hIndex: 8,
+      vIndex: 5,
+      hSpan: [6, 12],
+      vSpan: [4, 8],
+      lastDirection: null
+    };
+
+    expect(shouldCancelSourceReturn(sourceState, [6, 12], [4, 8])).toBe(true);
+    expect(shouldCancelSourceReturn(sourceState, [6, 12], [2, 6], { h: 8, v: 4.2 })).toBe(true);
+    expect(shouldCancelSourceReturn(sourceState, [6, 12], [0, 4])).toBe(false);
+    expect(shouldCancelSourceReturn(sourceState, [4, 10], [4, 8])).toBe(false);
+    expect(shouldCancelSourceReturn(sourceState, [6, 12], [2, 6], { h: 8, v: 3.8 })).toBe(false);
   });
 });

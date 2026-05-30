@@ -29,7 +29,8 @@ export class TilePreview {
     animTime?: number,
     customOpacity?: number,
     isSecondary?: boolean,
-    variant?: 'normal' | 'blocked' | 'blocked-overlap' | 'blocked-too-small' | 'blocked-out-of-bounds' | 'swap-primary' | 'swap-secondary'
+    variant?: 'normal' | 'blocked' | 'blocked-overlap' | 'blocked-too-small' | 'blocked-out-of-bounds' | 'swap-primary' | 'swap-secondary',
+    startFromWindow: boolean = true
   ) {
     this.anim_time = animTime || 150;
 
@@ -73,7 +74,9 @@ export class TilePreview {
           width: monitor.width,
           height: monitor.height
         });
-        const [intersected, rect] = window.get_buffer_rect().intersect(monitorRect);
+        const [intersected, rect] = startFromWindow
+          ? window.get_buffer_rect().intersect(monitorRect)
+          : [false, null];
         if (intersected) {
           this.actor.set_size(rect.width, rect.height);
           this.actor.set_position(rect.x, rect.y);
