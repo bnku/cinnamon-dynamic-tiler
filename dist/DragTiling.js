@@ -6,6 +6,7 @@ const TilingEngine_1 = require("./core/TilingEngine");
 function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, activeWindows) {
     const states = {};
     const visited = new Set();
+    const touched = new Set();
     // 1. Initialize states for all other windows on monitor
     const otherWindows = activeWindows.filter(w => w.windowId !== draggedId);
     for (const w of otherWindows) {
@@ -23,6 +24,146 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
     const hasHorizontalOverlap = (spanA, spanB) => {
         return Math.max(spanA[0], spanB[0]) < Math.min(spanA[1], spanB[1]);
     };
+    const spansEqual = (spanA, spanB) => {
+        return spanA[0] === spanB[0] && spanA[1] === spanB[1];
+    };
+    const spanSize = (span) => span[1] - span[0];
+    const spanCenter = (span) => (span[0] + span[1]) / 2;
+    const updateIndexes = (state) => {
+        state.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(state.hSpan);
+        state.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(state.vSpan);
+    };
+    const setHSpan = (id, hSpan) => {
+        const state = states[id];
+        state.hSpan = hSpan;
+        state.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(hSpan);
+        touched.add(id);
+    };
+    const setVSpan = (id, vSpan) => {
+        const state = states[id];
+        state.vSpan = vSpan;
+        state.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(vSpan);
+        touched.add(id);
+    };
+    const rectsOverlap = (a, b) => {
+        return hasHorizontalOverlap(a.hSpan, b.hSpan) && hasVerticalOverlap(a.vSpan, b.vSpan);
+    };
+    const carveHorizontalAwayFromTarget = (id) => {
+        const state = states[id];
+        const targetCenter = spanCenter(targetHSpan);
+        const stateCenter = spanCenter(state.hSpan);
+        const candidates = targetCenter >= stateCenter
+            ? [[state.hSpan[0], targetHSpan[0]], [targetHSpan[1], state.hSpan[1]]]
+            : [[targetHSpan[1], state.hSpan[1]], [state.hSpan[0], targetHSpan[0]]];
+        for (const candidate of candidates) {
+            if (candidate[0] >= 0 && candidate[1] <= config.gridSize && spanSize(candidate) >= config.minSpan) {
+                setHSpan(id, candidate);
+                return true;
+            }
+        }
+        return false;
+    };
+    const carveVerticalAwayFromTarget = (id) => {
+        const state = states[id];
+        const targetCenter = spanCenter(targetVSpan);
+        const stateCenter = spanCenter(state.vSpan);
+        const candidates = targetCenter >= stateCenter
+            ? [[state.vSpan[0], targetVSpan[0]], [targetVSpan[1], state.vSpan[1]]]
+            : [[targetVSpan[1], state.vSpan[1]], [state.vSpan[0], targetVSpan[0]]];
+        for (const candidate of candidates) {
+            if (candidate[0] >= 0 && candidate[1] <= config.gridSize && spanSize(candidate) >= config.minSpan) {
+                setVSpan(id, candidate);
+                return true;
+            }
+        }
+        return false;
+    };
+    const separateHorizontally = (movableId, anchorId) => {
+        const movable = states[movableId];
+        const anchor = states[anchorId];
+        const movableCenter = spanCenter(movable.hSpan);
+        const anchorCenter = spanCenter(anchor.hSpan);
+        const candidates = movableCenter >= anchorCenter
+            ? [[anchor.hSpan[1], movable.hSpan[1]], [movable.hSpan[0], anchor.hSpan[0]]]
+            : [[movable.hSpan[0], anchor.hSpan[0]], [anchor.hSpan[1], movable.hSpan[1]]];
+        for (const candidate of candidates) {
+            if (candidate[0] >= 0 && candidate[1] <= config.gridSize && spanSize(candidate) >= config.minSpan) {
+                setHSpan(movableId, candidate);
+                return true;
+            }
+        }
+        return false;
+    };
+    const separateVertically = (movableId, anchorId) => {
+        const movable = states[movableId];
+        const anchor = states[anchorId];
+        const movableCenter = spanCenter(movable.vSpan);
+        const anchorCenter = spanCenter(anchor.vSpan);
+        const candidates = movableCenter >= anchorCenter
+            ? [[anchor.vSpan[1], movable.vSpan[1]], [movable.vSpan[0], anchor.vSpan[0]]]
+            : [[movable.vSpan[0], anchor.vSpan[0]], [anchor.vSpan[1], movable.vSpan[1]]];
+        for (const candidate of candidates) {
+            if (candidate[0] >= 0 && candidate[1] <= config.gridSize && spanSize(candidate) >= config.minSpan) {
+                setVSpan(movableId, candidate);
+                return true;
+            }
+        }
+        return false;
+    };
+    const separateFromAnchor = (movableId, anchorId) => {
+        const movable = states[movableId];
+        const anchor = states[anchorId];
+        const hOverlap = Math.min(movable.hSpan[1], anchor.hSpan[1]) - Math.max(movable.hSpan[0], anchor.hSpan[0]);
+        const vOverlap = Math.min(movable.vSpan[1], anchor.vSpan[1]) - Math.max(movable.vSpan[0], anchor.vSpan[0]);
+        if (hOverlap <= vOverlap) {
+            return separateHorizontally(movableId, anchorId) || separateVertically(movableId, anchorId);
+        }
+        return separateVertically(movableId, anchorId) || separateHorizontally(movableId, anchorId);
+    };
+    const sanitizeTouchedOverlaps = () => {
+        const ids = Object.keys(states);
+        for (let pass = 0; pass < ids.length * 2; pass++) {
+            let changed = false;
+            for (let i = 0; i < ids.length; i++) {
+                for (let j = i + 1; j < ids.length; j++) {
+                    const aId = ids[i];
+                    const bId = ids[j];
+                    const a = states[aId];
+                    const b = states[bId];
+                    if (!rectsOverlap(a, b))
+                        continue;
+                    let movableId = null;
+                    let anchorId = null;
+                    if (aId === draggedId) {
+                        movableId = bId;
+                        anchorId = aId;
+                    }
+                    else if (bId === draggedId) {
+                        movableId = aId;
+                        anchorId = bId;
+                    }
+                    else if (touched.has(aId) && !touched.has(bId)) {
+                        movableId = aId;
+                        anchorId = bId;
+                    }
+                    else if (touched.has(bId) && !touched.has(aId)) {
+                        movableId = bId;
+                        anchorId = aId;
+                    }
+                    else if (touched.has(aId)) {
+                        movableId = aId;
+                        anchorId = bId;
+                    }
+                    if (movableId && anchorId && separateFromAnchor(movableId, anchorId)) {
+                        updateIndexes(states[movableId]);
+                        changed = true;
+                    }
+                }
+            }
+            if (!changed)
+                break;
+        }
+    };
     // 2. Perform grid vacancy collapse if the dragged window had a valid cropped span before
     const draggedWin = activeWindows.find(w => w.windowId === draggedId);
     if (draggedWin && draggedWin.state && draggedWin.state.hSpan && draggedWin.state.vSpan) {
@@ -30,7 +171,8 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const vacantVSpan = draggedWin.state.vSpan;
         const isHSpanCropped = (vacantHSpan[1] - vacantHSpan[0] < config.gridSize);
         const isVSpanCropped = (vacantVSpan[1] - vacantVSpan[0] < config.gridSize);
-        if (isHSpanCropped || isVSpanCropped) {
+        const isSameAsTarget = spansEqual(vacantHSpan, targetHSpan) && spansEqual(vacantVSpan, targetVSpan);
+        if (!isSameAsTarget && (isHSpanCropped || isVSpanCropped)) {
             let collapsedHorizontally = false;
             // Expand horizontal neighbors into vacancy (preferring horizontal collapse to keep structures clean)
             let leftNeighborId = null;
@@ -46,6 +188,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
                 const s = states[leftNeighborId];
                 s.hSpan[1] = vacantHSpan[1];
                 s.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(s.hSpan);
+                touched.add(leftNeighborId);
                 collapsedHorizontally = true;
             }
             else {
@@ -61,6 +204,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
                     const s = states[rightNeighborId];
                     s.hSpan[0] = vacantHSpan[0];
                     s.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(s.hSpan);
+                    touched.add(rightNeighborId);
                     collapsedHorizontally = true;
                 }
             }
@@ -78,6 +222,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
                     const s = states[topNeighborId];
                     s.vSpan[1] = vacantVSpan[1];
                     s.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(s.vSpan);
+                    touched.add(topNeighborId);
                 }
                 else {
                     let bottomNeighborId = null;
@@ -92,6 +237,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
                         const s = states[bottomNeighborId];
                         s.vSpan[0] = vacantVSpan[0];
                         s.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(s.vSpan);
+                        touched.add(bottomNeighborId);
                     }
                 }
             }
@@ -122,6 +268,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const newStartClamped = Math.max(0, newEndClamped - Math.max(config.minSpan, width));
         state.hSpan = [newStartClamped, newEndClamped];
         state.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(state.hSpan);
+        touched.add(id);
         // Push vertical-overlapping neighbors on the left
         for (const other of windowsToProcess) {
             if (other.windowId === id)
@@ -148,6 +295,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const newEndClamped = Math.min(config.gridSize, newStartClamped + Math.max(config.minSpan, width));
         state.hSpan = [newStartClamped, newEndClamped];
         state.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(state.hSpan);
+        touched.add(id);
         // Push vertical-overlapping neighbors on the right
         for (const other of windowsToProcess) {
             if (other.windowId === id)
@@ -174,6 +322,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const newStartClamped = Math.max(0, newEndClamped - Math.max(config.minSpan, height));
         state.vSpan = [newStartClamped, newEndClamped];
         state.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(state.vSpan);
+        touched.add(id);
         // Push horizontal-overlapping neighbors above
         for (const other of windowsToProcess) {
             if (other.windowId === id)
@@ -200,6 +349,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const newEndClamped = Math.min(config.gridSize, newStartClamped + Math.max(config.minSpan, height));
         state.vSpan = [newStartClamped, newEndClamped];
         state.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(state.vSpan);
+        touched.add(id);
         // Push horizontal-overlapping neighbors below
         for (const other of windowsToProcess) {
             if (other.windowId === id)
@@ -221,7 +371,13 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             const centerWindowY = (state.vSpan[0] + state.vSpan[1]) / 2;
             const dx = centerWindowX - centerTargetX;
             const dy = centerWindowY - centerTargetY;
-            // Select push direction based on vector with largest distance from target center
+            // Prefer carving space out of large intersecting windows. This keeps a wide
+            // window anchored instead of throwing it across already occupied columns.
+            const carved = carveHorizontalAwayFromTarget(w.windowId) || carveVerticalAwayFromTarget(w.windowId);
+            if (carved) {
+                continue;
+            }
+            // Fallback to directional push when the intersecting window cannot be carved.
             if (Math.abs(dx) >= Math.abs(dy)) {
                 if (dx < 0) {
                     pushLeft(w.windowId, targetHSpan[0]);
@@ -240,6 +396,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             }
         }
     }
+    sanitizeTouchedOverlaps();
     return states;
 }
 function collapseVacancy(vacantId, config, activeWindows) {

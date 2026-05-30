@@ -1,4 +1,5 @@
 import { TilingEngine } from '../src/core/TilingEngine';
+import { calculateDragTransitions } from '../src/DragTiling';
 import { ScreenInfo, WindowState, Config } from '../src/core/types';
 
 describe('TilingEngine - 12-Column Layout Calculations', () => {
@@ -714,5 +715,132 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(nextStateShiftDown.vSpan).toEqual([6, 12]);
     expect(nextStateShiftDown.lastDirection).toBe('shift-down');
   });
-});
 
+  test('DnD should insert a floating terminal to the right of a wide Chrome window without pushing Chrome over existing terminal columns', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 0, vIndex: 2, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal-top',
+        state: { hIndex: 1, vIndex: 2, hSpan: [2, 4] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal-bottom',
+        state: { hIndex: 1, vIndex: 8, hSpan: [2, 4] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'dragged-terminal',
+        state: { hIndex: 10, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'dragged-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['dragged-terminal'].hSpan).toEqual([10, 12]);
+    expect(result['chrome'].hSpan).toEqual([4, 10]);
+    expect(result['middle-terminal-top'].hSpan).toEqual([2, 4]);
+    expect(result['middle-terminal-bottom'].hSpan).toEqual([2, 4]);
+  });
+
+  test('DnD should insert a floating terminal to the left of Chrome by shrinking Chrome rightward instead of wildly rearranging existing columns', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 0, vIndex: 2, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 1, vIndex: 5, hSpan: [2, 4] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'dragged-terminal',
+        state: { hIndex: 3, vIndex: 5, hSpan: [4, 6] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'dragged-terminal',
+      [4, 6],
+      [0, 12],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['dragged-terminal'].hSpan).toEqual([4, 6]);
+    expect(result['chrome'].hSpan).toEqual([6, 12]);
+    expect(result['middle-terminal'].hSpan).toEqual([2, 4]);
+    expect(result['left-terminal'].hSpan).toEqual([0, 2]);
+  });
+
+  test('DnD should place a floating terminal in the top-right slot, move Chrome left, and leave bottom-right chat untouched', () => {
+    const activeWindows = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chat',
+        state: { hIndex: 9, vIndex: 8, hSpan: [8, 12] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'dragged-terminal',
+      [10, 12],
+      [0, 6],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['dragged-terminal'].hSpan).toEqual([10, 12]);
+    expect(result['dragged-terminal'].vSpan).toEqual([0, 6]);
+    expect(result['chat'].hSpan).toEqual([8, 12]);
+    expect(result['chat'].vSpan).toEqual([6, 12]);
+    expect(result['chrome'].hSpan).toEqual([4, 8]);
+    expect(result['chrome'].vSpan).toEqual([0, 12]);
+  });
+
+  test('DnD should prefer horizontal carving over vertical collapse for a wide top-right drop target', () => {
+    const activeWindows = [
+      {
+        windowId: 'chrome',
+        state: { hIndex: 7, vIndex: 5, hSpan: [4, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chat',
+        state: { hIndex: 9, vIndex: 8, hSpan: [8, 12] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'dragged-terminal',
+      [8, 12],
+      [0, 6],
+      fakeConfig,
+      activeWindows
+    );
+
+    expect(result['dragged-terminal'].hSpan).toEqual([8, 12]);
+    expect(result['dragged-terminal'].vSpan).toEqual([0, 6]);
+    expect(result['chrome'].hSpan).toEqual([4, 8]);
+    expect(result['chrome'].vSpan).toEqual([0, 12]);
+    expect(result['chat'].hSpan).toEqual([8, 12]);
+    expect(result['chat'].vSpan).toEqual([6, 12]);
+  });
+});

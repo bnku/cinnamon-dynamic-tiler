@@ -204,7 +204,9 @@ class DynamicTilerExtension {
         sourceState: cached ? { ...cached.state } : null,
         sourceGeometry: cached ? { ...cached.originalGeometry } : { ...geom },
         sourceTiledGeometry: cached ? { ...cached.tiledGeometry } : null,
-        lastDragStates: null
+        lastDragStates: null,
+        cancelled: false,
+        floated: false
       };
 
       // Calculate mouse offset relative to top-left corner of the dragged window
@@ -309,6 +311,29 @@ class DynamicTilerExtension {
           }
         }
 
+        if (!cached && forceAddNew) {
+          const candidateState: WindowState = {
+            hIndex: TilingEngine.spanToHIndex(hSpan),
+            vIndex: TilingEngine.spanToVIndex(vSpan),
+            hSpan,
+            vSpan,
+            lastDirection: null
+          };
+          const snappedGeom = TilingEngine.stateToGeometry(candidateState, currentMonitor, config);
+          const diffX = Math.abs(currentVisible.x - snappedGeom.x);
+          const diffY = Math.abs(currentVisible.y - snappedGeom.y);
+          const diffW = Math.abs(currentVisible.width - snappedGeom.width);
+          const diffH = Math.abs(currentVisible.height - snappedGeom.height);
+          const STARTUP_INDEX_THRESHOLD = 40;
+
+          if (diffX > STARTUP_INDEX_THRESHOLD ||
+              diffY > STARTUP_INDEX_THRESHOLD ||
+              diffW > STARTUP_INDEX_THRESHOLD ||
+              diffH > STARTUP_INDEX_THRESHOLD) {
+            continue;
+          }
+        }
+
         // Z-Overlap Sanitization Check:
         // Ensure this window's logical span does not overlap with already confirmed tiled windows on this monitor.
         let hasOverlap = false;
@@ -397,6 +422,8 @@ class DynamicTilerExtension {
         if (this.dragSession && this.dragSession.lastDragStates) {
           this.clearPreviews();
           this.dragSession.lastDragStates = null;
+          this.dragSession.floated = this.dragSession.wasTiled === true;
+          this.dragSession.cancelled = !this.dragSession.floated;
           this.lastDragStates = null;
 
           // Restore the original geometry and place the window smoothly under the mouse
@@ -474,6 +501,18 @@ class DynamicTilerExtension {
 
       const targetHSpan: [number, number] = [startCol, startCol + windowWidth];
 
+      const ratioY = (my - workarea.y) / workarea.height;
+      const midGrid = Math.round(config.gridSize / 2);
+      let targetVSpan: [number, number];
+
+      if (ratioY < 0.28) {
+        targetVSpan = [0, midGrid];
+      } else if (ratioY > 0.72) {
+        targetVSpan = [midGrid, config.gridSize];
+      } else {
+        targetVSpan = [0, config.gridSize];
+      }
+
       // Scan all other normal windows on this monitor to build the activeWindowsOnMonitor list first,
       // as we need this context to detect stacked windows in the target column.
       const visibleWindowIds = this.shell.getVisibleWindowIds();
@@ -487,14 +526,7 @@ class DynamicTilerExtension {
           if (this.dragSession && this.dragSession.wasTiled && this.dragSession.sourceState) {
             state = this.dragSession.sourceState;
           } else {
-            // New window, create transient state
-            state = {
-              hSpan: [startCol, startCol + windowWidth],
-              vSpan: [0, config.gridSize],
-              hIndex: TilingEngine.spanToHIndex([startCol, startCol + windowWidth]),
-              vIndex: TilingEngine.spanToVIndex([0, config.gridSize]),
-              lastDirection: null as any
-            };
+            continue;
           }
         } else {
           if (cachedWin) {
@@ -521,48 +553,6 @@ class DynamicTilerExtension {
             windowId: id,
             state: state
           });
-        }
-      }
-
-      // Check for windows stacked vertically (above and below) in our target horizontal span
-      let hasWindowAbove = false;
-      let hasWindowBelow = false;
-      const midGrid = Math.round(config.gridSize / 2);
-
-      const hasHorizontalOverlap = (spanA: [number, number], spanB: [number, number]) => {
-        return Math.max(spanA[0], spanB[0]) < Math.min(spanA[1], spanB[1]);
-      };
-
-      for (const w of activeWindowsOnMonitor) {
-        if (w.windowId === this.draggedWindowId) continue;
-        if (hasHorizontalOverlap(targetHSpan, w.state.hSpan)) {
-          const centerV = (w.state.vSpan[0] + w.state.vSpan[1]) / 2;
-          if (centerV < midGrid) {
-            hasWindowAbove = true;
-          } else if (centerV > midGrid) {
-            hasWindowBelow = true;
-          }
-        }
-      }
-
-      let targetVSpan: [number, number];
-      const ratioY = (my - workarea.y) / workarea.height;
-
-      if (ratioY < 0.28) {
-        // Upper edge -> take upper half
-        targetVSpan = [0, midGrid];
-      } else if (ratioY > 0.72) {
-        // Lower edge -> take lower half
-        targetVSpan = [midGrid, config.gridSize];
-      } else {
-        // Center zone
-        if (hasWindowAbove && hasWindowBelow) {
-          // Stand 'between' them (occupy middle half)
-          const quarter = Math.round(config.gridSize / 4);
-          targetVSpan = [quarter, config.gridSize - quarter];
-        } else {
-          // Clear center -> occupy full vertical height
-          targetVSpan = [0, config.gridSize];
         }
       }
 
@@ -718,14 +708,12 @@ class DynamicTilerExtension {
             global.logError(`[Dynamic Tiler] DnD Apply error for window ${id}: ${e.message}`);
           }
         }
-      } else {
-        // FLOAT OR CANCEL:
-        // If window was tiled originally, we must collapse the vacancy on its source monitor
-        if (session.wasTiled && session.sourceMonitor) {
-          global.log(`[Dynamic Tiler] DnD Cancelled/Floated: Collapsing vacancy on source monitor ${session.sourceMonitor.id} for window ${this.draggedWindowId}`);
-          this.collapseAndApplyVacancy(this.draggedWindowId, session.sourceMonitor, config, monitors);
-          this.cache.clearState(this.draggedWindowId);
-        }
+      } else if (session.floated && session.wasTiled && session.sourceMonitor) {
+        global.log(`[Dynamic Tiler] DnD floated tiled window ${this.draggedWindowId}; collapsing source vacancy on monitor ${session.sourceMonitor.id}`);
+        this.collapseAndApplyVacancy(this.draggedWindowId, session.sourceMonitor, config, monitors);
+        this.cache.clearState(this.draggedWindowId);
+      } else if (session.cancelled) {
+        global.log(`[Dynamic Tiler] DnD cancelled safely for window ${this.draggedWindowId}; layout cache left unchanged`);
       }
     }
 
