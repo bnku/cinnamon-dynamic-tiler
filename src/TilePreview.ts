@@ -21,11 +21,22 @@ export class TilePreview {
     this._reset();
   }
 
-  public show(window: any, tileRect: { x: number; y: number; width: number; height: number }, monitorIndex: number, animate: boolean, animTime?: number, customOpacity?: number, isSecondary?: boolean) {
+  public show(
+    window: any,
+    tileRect: { x: number; y: number; width: number; height: number },
+    monitorIndex: number,
+    animate: boolean,
+    animTime?: number,
+    customOpacity?: number,
+    isSecondary?: boolean,
+    variant?: 'normal' | 'blocked'
+  ) {
     this.anim_time = animTime || 150;
 
     // Apply appropriate styling based on whether it is the primary focus landing or secondary shifted window
-    if (isSecondary) {
+    if (variant === 'blocked') {
+      this.actor.set_style('background-color: rgba(231, 76, 60, 0.16); border: 2.5px dashed rgba(231, 76, 60, 0.92); border-radius: 8px;');
+    } else if (isSecondary) {
       this.actor.set_style('background-color: rgba(52, 152, 219, 0.08); border: 1.5px dashed rgba(52, 152, 219, 0.5); border-radius: 6px;');
     } else {
       this.actor.set_style('background-color: rgba(52, 152, 219, 0.32); border: 2.5px solid #3498db; border-radius: 8px;');

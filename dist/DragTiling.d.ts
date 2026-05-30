@@ -1,8 +1,36 @@
-import { Config, WindowState } from './core/types';
+import { Config, ScreenInfo, WindowState } from './core/types';
+export interface DragIntentPoint {
+    h: number;
+    v: number;
+}
+export interface DragTransitionOptions {
+    experimentalSwapSameShapeWindows?: boolean;
+    intentPoint?: DragIntentPoint;
+}
+export interface DragTargetInput {
+    draggedId: string;
+    mx: number;
+    my: number;
+    monitor: ScreenInfo;
+    config: Config;
+    preferredWidth: number;
+    preferredHeight: number;
+    activeWindows: {
+        windowId: string;
+        state: WindowState;
+    }[];
+}
+export interface DragTargetResult {
+    targetHSpan: [number, number];
+    targetVSpan: [number, number];
+    intentPoint: DragIntentPoint;
+}
+export declare function hasLayoutOverlaps(states: Record<string, WindowState>): boolean;
+export declare function computeDragTarget(input: DragTargetInput): DragTargetResult;
 export declare function calculateDragTransitions(draggedId: string, targetHSpan: [number, number], targetVSpan: [number, number], config: Config, activeWindows: {
     windowId: string;
     state: WindowState;
-}[]): Record<string, WindowState>;
+}[], options?: DragTransitionOptions): Record<string, WindowState>;
 export declare function collapseVacancy(vacantId: string, config: Config, activeWindows: {
     windowId: string;
     state: WindowState;

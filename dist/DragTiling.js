@@ -1,14 +1,124 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.hasLayoutOverlaps = hasLayoutOverlaps;
+exports.computeDragTarget = computeDragTarget;
 exports.calculateDragTransitions = calculateDragTransitions;
 exports.collapseVacancy = collapseVacancy;
 const TilingEngine_1 = require("./core/TilingEngine");
-function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, activeWindows) {
+function hasSpanOverlap(spanA, spanB) {
+    return Math.max(spanA[0], spanB[0]) < Math.min(spanA[1], spanB[1]);
+}
+function hasLayoutOverlaps(states) {
+    const entries = Object.entries(states);
+    for (let i = 0; i < entries.length; i++) {
+        for (let j = i + 1; j < entries.length; j++) {
+            const a = entries[i][1];
+            const b = entries[j][1];
+            if (hasSpanOverlap(a.hSpan, b.hSpan) && hasSpanOverlap(a.vSpan, b.vSpan)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+function computeDragTarget(input) {
+    const { draggedId, mx, my, monitor, config, activeWindows } = input;
+    const { workarea } = monitor;
+    const colWidth = workarea.width / config.gridSize;
+    const rowHeight = workarea.height / config.gridSize;
+    const intentPoint = {
+        h: (mx - workarea.x) / colWidth,
+        v: (my - workarea.y) / rowHeight
+    };
+    const targetWidth = Math.max(config.minSpan, Math.min(config.gridSize, input.preferredWidth));
+    let startCol = Math.round(intentPoint.h - targetWidth / 2);
+    if (startCol + targetWidth > config.gridSize) {
+        startCol = config.gridSize - targetWidth;
+    }
+    if (startCol < 0)
+        startCol = 0;
+    const targetHSpan = [startCol, startCol + targetWidth];
+    const ratioY = (my - workarea.y) / workarea.height;
+    const midGrid = Math.round(config.gridSize / 2);
+    let targetVSpan;
+    if (ratioY < 0.28) {
+        targetVSpan = [0, midGrid];
+    }
+    else if (ratioY > 0.72) {
+        targetVSpan = [midGrid, config.gridSize];
+    }
+    else {
+        targetVSpan = [0, config.gridSize];
+    }
+    const stackWindows = activeWindows
+        .filter(w => w.windowId !== draggedId)
+        .map(w => ({
+        ...w,
+        hOverlap: Math.max(0, Math.min(targetHSpan[1], w.state.hSpan[1]) - Math.max(targetHSpan[0], w.state.hSpan[0]))
+    }))
+        .filter(w => w.hOverlap > 0)
+        .sort((a, b) => b.hOverlap - a.hOverlap ||
+        a.state.vSpan[0] - b.state.vSpan[0] ||
+        a.windowId.localeCompare(b.windowId));
+    if (stackWindows.length > 0 && (stackWindows.length + 1) * config.minSpan <= config.gridSize) {
+        const targetSpanWidth = targetHSpan[1] - targetHSpan[0];
+        const maxOverlap = stackWindows[0].hOverlap;
+        const columnStackWindows = stackWindows
+            .filter(w => w.hOverlap === maxOverlap && w.hOverlap / targetSpanWidth >= 0.5)
+            .sort((a, b) => a.state.vSpan[0] - b.state.vSpan[0] || a.windowId.localeCompare(b.windowId));
+        if (columnStackWindows.length > 0) {
+            const cursorRow = intentPoint.v;
+            const boundaries = [0, config.gridSize];
+            for (const w of columnStackWindows) {
+                boundaries.push(w.state.vSpan[0], w.state.vSpan[1]);
+            }
+            const uniqueBoundaries = Array.from(new Set(boundaries))
+                .filter(v => v >= 0 && v <= config.gridSize)
+                .sort((a, b) => a - b);
+            let nearestBoundary = uniqueBoundaries[0];
+            let nearestDistance = Math.abs(cursorRow - nearestBoundary);
+            for (const boundary of uniqueBoundaries) {
+                const distance = Math.abs(cursorRow - boundary);
+                if (distance < nearestDistance) {
+                    nearestBoundary = boundary;
+                    nearestDistance = distance;
+                }
+            }
+            const stackTargetHeight = Math.max(config.minSpan, Math.round(config.gridSize / (columnStackWindows.length + 1)));
+            const boundaryThreshold = Math.max(1, stackTargetHeight / 2);
+            if (nearestDistance <= boundaryThreshold) {
+                if (nearestBoundary <= 0) {
+                    targetVSpan = [0, stackTargetHeight];
+                }
+                else if (nearestBoundary >= config.gridSize) {
+                    targetVSpan = [config.gridSize - stackTargetHeight, config.gridSize];
+                }
+                else {
+                    let startRow = Math.round(nearestBoundary - stackTargetHeight / 2);
+                    if (startRow < 0)
+                        startRow = 0;
+                    if (startRow + stackTargetHeight > config.gridSize) {
+                        startRow = config.gridSize - stackTargetHeight;
+                    }
+                    targetVSpan = [startRow, startRow + stackTargetHeight];
+                }
+            }
+        }
+    }
+    return {
+        targetHSpan,
+        targetVSpan,
+        intentPoint
+    };
+}
+function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, activeWindows, options = {}) {
     const states = {};
     const visited = new Set();
     const touched = new Set();
     // 1. Initialize states for all other windows on monitor
-    const otherWindows = activeWindows.filter(w => w.windowId !== draggedId);
+    const otherWindows = activeWindows
+        .filter(w => w.windowId !== draggedId)
+        .sort(compareWindowsByGridPosition);
     for (const w of otherWindows) {
         states[w.windowId] = {
             hIndex: w.state.hIndex,
@@ -29,6 +139,13 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
     };
     const spanSize = (span) => span[1] - span[0];
     const spanCenter = (span) => (span[0] + span[1]) / 2;
+    const cloneState = (state) => ({
+        hIndex: state.hIndex,
+        vIndex: state.vIndex,
+        hSpan: [...state.hSpan],
+        vSpan: [...state.vSpan],
+        lastDirection: state.lastDirection
+    });
     const updateIndexes = (state) => {
         state.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(state.hSpan);
         state.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(state.vSpan);
@@ -48,6 +165,63 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
     const rectsOverlap = (a, b) => {
         return hasHorizontalOverlap(a.hSpan, b.hSpan) && hasVerticalOverlap(a.vSpan, b.vSpan);
     };
+    const maybeSwapWindows = () => {
+        if (!options.experimentalSwapSameShapeWindows || !options.intentPoint)
+            return null;
+        const draggedWin = activeWindows.find(w => w.windowId === draggedId);
+        if (!draggedWin)
+            return null;
+        const draggedState = draggedWin.state;
+        const sourceWidth = spanSize(draggedState.hSpan);
+        const sourceHeight = spanSize(draggedState.vSpan);
+        const targetWin = otherWindows.find(w => {
+            const state = w.state;
+            const containsPoint = options.intentPoint.h >= state.hSpan[0] &&
+                options.intentPoint.h <= state.hSpan[1] &&
+                options.intentPoint.v >= state.vSpan[0] &&
+                options.intentPoint.v <= state.vSpan[1];
+            return containsPoint &&
+                spanSize(state.hSpan) === sourceWidth &&
+                spanSize(state.vSpan) === sourceHeight;
+        });
+        if (!targetWin)
+            return null;
+        const targetState = targetWin.state;
+        const shareVerticalEdge = (draggedState.hSpan[1] === targetState.hSpan[0] || targetState.hSpan[1] === draggedState.hSpan[0]) &&
+            hasVerticalOverlap(draggedState.vSpan, targetState.vSpan);
+        const shareHorizontalEdge = (draggedState.vSpan[1] === targetState.vSpan[0] || targetState.vSpan[1] === draggedState.vSpan[0]) &&
+            hasHorizontalOverlap(draggedState.hSpan, targetState.hSpan);
+        const isNeighbor = shareVerticalEdge || shareHorizontalEdge;
+        const marginRatio = isNeighbor ? 0.3 : 0.2;
+        const innerHStart = targetState.hSpan[0] + sourceWidth * marginRatio;
+        const innerHEnd = targetState.hSpan[1] - sourceWidth * marginRatio;
+        const innerVStart = targetState.vSpan[0] + sourceHeight * marginRatio;
+        const innerVEnd = targetState.vSpan[1] - sourceHeight * marginRatio;
+        const isCentralHit = options.intentPoint.h >= innerHStart &&
+            options.intentPoint.h <= innerHEnd &&
+            options.intentPoint.v >= innerVStart &&
+            options.intentPoint.v <= innerVEnd;
+        if (!isCentralHit)
+            return null;
+        const swappedStates = {};
+        for (const w of activeWindows) {
+            if (w.windowId === draggedId) {
+                swappedStates[w.windowId] = cloneState(targetState);
+                swappedStates[w.windowId].lastDirection = null;
+            }
+            else if (w.windowId === targetWin.windowId) {
+                swappedStates[w.windowId] = cloneState(draggedState);
+                swappedStates[w.windowId].lastDirection = null;
+            }
+            else {
+                swappedStates[w.windowId] = cloneState(w.state);
+            }
+        }
+        return swappedStates;
+    };
+    const swapStates = maybeSwapWindows();
+    if (swapStates)
+        return swapStates;
     const carveHorizontalAwayFromTarget = (id) => {
         const state = states[id];
         const targetCenter = spanCenter(targetHSpan);
@@ -173,72 +347,16 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const isVSpanCropped = (vacantVSpan[1] - vacantVSpan[0] < config.gridSize);
         const isSameAsTarget = spansEqual(vacantHSpan, targetHSpan) && spansEqual(vacantVSpan, targetVSpan);
         if (!isSameAsTarget && (isHSpanCropped || isVSpanCropped)) {
-            let collapsedHorizontally = false;
-            // Expand horizontal neighbors into vacancy (preferring horizontal collapse to keep structures clean)
-            let leftNeighborId = null;
-            for (const w of otherWindows) {
-                const s = states[w.windowId];
-                // Support small 1-cell tolerance to perfectly align Chrome/CSD windows
-                if (hasVerticalOverlap(vacantVSpan, s.vSpan) && Math.abs(s.hSpan[1] - vacantHSpan[0]) <= 1) {
-                    leftNeighborId = w.windowId;
-                    break;
-                }
-            }
-            if (leftNeighborId) {
-                const s = states[leftNeighborId];
-                s.hSpan[1] = vacantHSpan[1];
-                s.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(s.hSpan);
-                touched.add(leftNeighborId);
-                collapsedHorizontally = true;
-            }
-            else {
-                let rightNeighborId = null;
-                for (const w of otherWindows) {
-                    const s = states[w.windowId];
-                    if (hasVerticalOverlap(vacantVSpan, s.vSpan) && Math.abs(s.hSpan[0] - vacantHSpan[1]) <= 1) {
-                        rightNeighborId = w.windowId;
-                        break;
-                    }
-                }
-                if (rightNeighborId) {
-                    const s = states[rightNeighborId];
-                    s.hSpan[0] = vacantHSpan[0];
-                    s.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(s.hSpan);
-                    touched.add(rightNeighborId);
-                    collapsedHorizontally = true;
-                }
-            }
-            // Expand vertical neighbors into vacancy if horizontal was not applicable
-            if (!collapsedHorizontally) {
-                let topNeighborId = null;
-                for (const w of otherWindows) {
-                    const s = states[w.windowId];
-                    if (hasHorizontalOverlap(vacantHSpan, s.hSpan) && Math.abs(s.vSpan[1] - vacantVSpan[0]) <= 1) {
-                        topNeighborId = w.windowId;
-                        break;
-                    }
-                }
-                if (topNeighborId) {
-                    const s = states[topNeighborId];
-                    s.vSpan[1] = vacantVSpan[1];
-                    s.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(s.vSpan);
-                    touched.add(topNeighborId);
-                }
-                else {
-                    let bottomNeighborId = null;
-                    for (const w of otherWindows) {
-                        const s = states[w.windowId];
-                        if (hasHorizontalOverlap(vacantHSpan, s.hSpan) && Math.abs(s.vSpan[0] - vacantVSpan[1]) <= 1) {
-                            bottomNeighborId = w.windowId;
-                            break;
-                        }
-                    }
-                    if (bottomNeighborId) {
-                        const s = states[bottomNeighborId];
-                        s.vSpan[0] = vacantVSpan[0];
-                        s.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(s.vSpan);
-                        touched.add(bottomNeighborId);
-                    }
+            const collapsedStates = collapseVacancy(draggedId, config, activeWindows);
+            for (const [id, collapsedState] of Object.entries(collapsedStates)) {
+                const previous = states[id];
+                states[id] = cloneState(collapsedState);
+                if (!previous ||
+                    previous.hSpan[0] !== collapsedState.hSpan[0] ||
+                    previous.hSpan[1] !== collapsedState.hSpan[1] ||
+                    previous.vSpan[0] !== collapsedState.vSpan[0] ||
+                    previous.vSpan[1] !== collapsedState.vSpan[1]) {
+                    touched.add(id);
                 }
             }
         }
@@ -399,6 +517,13 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
     sanitizeTouchedOverlaps();
     return states;
 }
+function compareWindowsByGridPosition(a, b) {
+    return a.state.vSpan[0] - b.state.vSpan[0] ||
+        a.state.hSpan[0] - b.state.hSpan[0] ||
+        a.state.vSpan[1] - b.state.vSpan[1] ||
+        a.state.hSpan[1] - b.state.hSpan[1] ||
+        a.windowId.localeCompare(b.windowId);
+}
 function collapseVacancy(vacantId, config, activeWindows) {
     const states = {};
     const vacantWin = activeWindows.find(w => w.windowId === vacantId);
@@ -416,7 +541,9 @@ function collapseVacancy(vacantId, config, activeWindows) {
     }
     const vacantHSpan = vacantWin.state.hSpan;
     const vacantVSpan = vacantWin.state.vSpan;
-    const otherWindows = activeWindows.filter(w => w.windowId !== vacantId);
+    const otherWindows = activeWindows
+        .filter(w => w.windowId !== vacantId)
+        .sort(compareWindowsByGridPosition);
     for (const w of otherWindows) {
         states[w.windowId] = {
             hIndex: w.state.hIndex,
@@ -434,6 +561,10 @@ function collapseVacancy(vacantId, config, activeWindows) {
     };
     const overlapSize = (spanA, spanB) => {
         return Math.max(0, Math.min(spanA[1], spanB[1]) - Math.max(spanA[0], spanB[0]));
+    };
+    const spanSize = (span) => span[1] - span[0];
+    const spansEqual = (spanA, spanB) => {
+        return spanA[0] === spanB[0] && spanA[1] === spanB[1];
     };
     const covers = (container, inner) => {
         return container[0] <= inner[0] && container[1] >= inner[1];
@@ -456,6 +587,53 @@ function collapseVacancy(vacantId, config, activeWindows) {
         s.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(hSpan);
         s.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(vSpan);
     };
+    const sameColumnWindows = otherWindows.filter(w => spansEqual(states[w.windowId].hSpan, vacantHSpan));
+    const prefersVerticalStackCollapse = spanSize(vacantHSpan) <= config.minSpan ||
+        sameColumnWindows.length >= 2;
+    if (prefersVerticalStackCollapse && sameColumnWindows.length > 0) {
+        const stackEntries = [
+            { id: vacantId, vSpan: vacantVSpan, vacant: true },
+            ...sameColumnWindows.map(w => ({
+                id: w.windowId,
+                vSpan: states[w.windowId].vSpan,
+                vacant: false
+            }))
+        ].sort((a, b) => a.vSpan[0] - b.vSpan[0] || a.id.localeCompare(b.id));
+        const vacantIndex = stackEntries.findIndex(entry => entry.vacant);
+        let startIndex = vacantIndex;
+        let endIndex = vacantIndex;
+        while (startIndex > 0 &&
+            Math.abs(stackEntries[startIndex - 1].vSpan[1] - stackEntries[startIndex].vSpan[0]) <= 1) {
+            startIndex--;
+        }
+        while (endIndex < stackEntries.length - 1 &&
+            Math.abs(stackEntries[endIndex].vSpan[1] - stackEntries[endIndex + 1].vSpan[0]) <= 1) {
+            endIndex++;
+        }
+        const connectedStack = stackEntries.slice(startIndex, endIndex + 1);
+        const remainingStack = connectedStack.filter(entry => !entry.vacant);
+        const stackStart = Math.min(...connectedStack.map(entry => entry.vSpan[0]));
+        const stackEnd = Math.max(...connectedStack.map(entry => entry.vSpan[1]));
+        const stackHeight = stackEnd - stackStart;
+        if (remainingStack.length > 0 && stackHeight >= remainingStack.length * config.minSpan) {
+            const previousStackStates = remainingStack.map(entry => ({
+                id: entry.id,
+                hSpan: [...states[entry.id].hSpan],
+                vSpan: [...states[entry.id].vSpan]
+            }));
+            for (let i = 0; i < remainingStack.length; i++) {
+                const nextStart = stackStart + Math.round((stackHeight * i) / remainingStack.length);
+                const nextEnd = stackStart + Math.round((stackHeight * (i + 1)) / remainingStack.length);
+                applyCandidate(remainingStack[i].id, [...vacantHSpan], [nextStart, nextEnd]);
+            }
+            if (!hasLayoutOverlaps(states)) {
+                return states;
+            }
+            for (const previous of previousStackStates) {
+                applyCandidate(previous.id, previous.hSpan, previous.vSpan);
+            }
+        }
+    }
     const candidates = [];
     for (const w of otherWindows) {
         const s = states[w.windowId];
@@ -480,23 +658,25 @@ function collapseVacancy(vacantId, config, activeWindows) {
             });
         }
         if (hasHorizontalOverlap(vacantHSpan, s.hSpan) && Math.abs(s.vSpan[1] - vacantVSpan[0]) <= 1) {
+            const isSameColumnStackNeighbor = prefersVerticalStackCollapse && spansEqual(s.hSpan, vacantHSpan);
             candidates.push({
                 id: w.windowId,
-                priority: overlapSize(vacantHSpan, s.hSpan),
+                priority: (isSameColumnStackNeighbor ? 200 : 0) + overlapSize(vacantHSpan, s.hSpan),
                 fullHSpan: s.hSpan,
                 fullVSpan: [s.vSpan[0], vacantVSpan[1]]
             });
         }
         if (hasHorizontalOverlap(vacantHSpan, s.hSpan) && Math.abs(s.vSpan[0] - vacantVSpan[1]) <= 1) {
+            const isSameColumnStackNeighbor = prefersVerticalStackCollapse && spansEqual(s.hSpan, vacantHSpan);
             candidates.push({
                 id: w.windowId,
-                priority: overlapSize(vacantHSpan, s.hSpan),
+                priority: (isSameColumnStackNeighbor ? 200 : 0) + overlapSize(vacantHSpan, s.hSpan),
                 fullHSpan: s.hSpan,
                 fullVSpan: [vacantVSpan[0], s.vSpan[1]]
             });
         }
     }
-    candidates.sort((a, b) => b.priority - a.priority);
+    candidates.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
     for (const candidate of candidates) {
         if (!wouldOverlap(candidate.id, candidate.fullHSpan, candidate.fullVSpan)) {
             applyCandidate(candidate.id, candidate.fullHSpan, candidate.fullVSpan);

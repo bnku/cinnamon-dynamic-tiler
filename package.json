@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build:cli": "tsc",
-    "build:extension": "esbuild src/extension.ts --bundle --outfile=/home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js --platform=neutral --target=es2020 --global-name=DynamicTiler --format=iife && echo 'var init = DynamicTiler.init;' >> /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js && echo 'var enable = DynamicTiler.enable;' >> /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js && echo 'var disable = DynamicTiler.disable;' >> /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js",
+    "build:extension": "esbuild src/extension.ts --bundle --outfile=/home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js --platform=neutral --target=es2020 --global-name=DynamicTiler --format=iife && echo 'var init = DynamicTiler.init;' >> /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js && echo 'var enable = DynamicTiler.enable;' >> /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js && echo 'var disable = DynamicTiler.disable;' >> /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/extension.js && cp settings-schema.json /home/bn/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/settings-schema.json",
     "build": "npm run build:cli && npm run build:extension",
     "test": "jest",
     "tile": "ts-node src/cli.ts"

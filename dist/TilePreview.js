@@ -17,10 +17,13 @@ class TilePreview {
         global.window_group.add_actor(this.actor);
         this._reset();
     }
-    show(window, tileRect, monitorIndex, animate, animTime, customOpacity, isSecondary) {
+    show(window, tileRect, monitorIndex, animate, animTime, customOpacity, isSecondary, variant) {
         this.anim_time = animTime || 150;
         // Apply appropriate styling based on whether it is the primary focus landing or secondary shifted window
-        if (isSecondary) {
+        if (variant === 'blocked') {
+            this.actor.set_style('background-color: rgba(231, 76, 60, 0.16); border: 2.5px dashed rgba(231, 76, 60, 0.92); border-radius: 8px;');
+        }
+        else if (isSecondary) {
             this.actor.set_style('background-color: rgba(52, 152, 219, 0.08); border: 1.5px dashed rgba(52, 152, 219, 0.5); border-radius: 6px;');
         }
         else {

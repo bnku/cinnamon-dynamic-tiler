@@ -1,5 +1,5 @@
 import { TilingEngine } from '../src/core/TilingEngine';
-import { calculateDragTransitions, collapseVacancy } from '../src/DragTiling';
+import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps } from '../src/DragTiling';
 import { ScreenInfo, WindowState, Config } from '../src/core/types';
 
 describe('TilingEngine - 12-Column Layout Calculations', () => {
@@ -868,6 +868,44 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(result['chat'].vSpan).toEqual([6, 12]);
   });
 
+  test('DnD vacancy collapse should keep a narrow vertical terminal stack intact instead of pulling Chrome sideways into the hole', () => {
+    const makeActiveWindows = () => [
+      {
+        windowId: 'top-terminal',
+        state: { hIndex: 1, vIndex: 1, hSpan: [2, 4] as [number, number], vSpan: [0, 4] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 1, vIndex: 5, hSpan: [2, 4] as [number, number], vSpan: [4, 8] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'bottom-terminal',
+        state: { hIndex: 1, vIndex: 9, hSpan: [2, 4] as [number, number], vSpan: [8, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'chrome',
+        state: { hIndex: 6, vIndex: 5, hSpan: [4, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-panel',
+        state: { hIndex: 11, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    for (const vacantId of ['top-terminal', 'middle-terminal', 'bottom-terminal']) {
+      const result = collapseVacancy(vacantId, fakeConfig, makeActiveWindows());
+      const terminalEntries = Object.entries(result)
+        .filter(([id, state]) => id.endsWith('-terminal') && state.hSpan[0] === 2 && state.hSpan[1] === 4)
+        .sort((a, b) => a[1].vSpan[0] - b[1].vSpan[0]);
+      const terminalSpans = terminalEntries.map(([, state]) => state.vSpan);
+
+      expect(result['chrome'].hSpan).toEqual([4, 10]);
+      expect(result['chrome'].vSpan).toEqual([0, 12]);
+      expect(terminalSpans).toEqual([[0, 6], [6, 12]]);
+      expect(hasLayoutOverlaps(result)).toBe(false);
+    }
+  });
+
   test('DnD should insert a window between two vertically stacked windows', () => {
     const activeWindows = [
       {
@@ -911,5 +949,260 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
 
     expect(result['dragged-terminal'].vSpan).toEqual([0, 6]);
     expect(result['existing'].vSpan).toEqual([6, 12]);
+  });
+
+  test('DnD target computation should keep top, center, and bottom magnetic height gestures', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+
+    const topTarget = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(3),
+      my: yForRow(1),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 2,
+      preferredHeight: 12,
+      activeWindows: []
+    });
+    const centerTarget = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(3),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 2,
+      preferredHeight: 12,
+      activeWindows: []
+    });
+    const bottomTarget = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(3),
+      my: yForRow(11),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 2,
+      preferredHeight: 12,
+      activeWindows: []
+    });
+
+    expect(topTarget.targetHSpan).toEqual([2, 4]);
+    expect(topTarget.targetVSpan).toEqual([0, 6]);
+    expect(centerTarget.targetVSpan).toEqual([0, 12]);
+    expect(bottomTarget.targetVSpan).toEqual([6, 12]);
+  });
+
+  test('DnD target computation should turn a cursor near a stack boundary into an insertion slot', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const activeWindows = [
+      {
+        windowId: 'top',
+        state: { hIndex: 5, vIndex: 2, hSpan: [0, 12] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'bottom',
+        state: { hIndex: 5, vIndex: 8, hSpan: [0, 12] as [number, number], vSpan: [6, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(6),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: fakeConfig,
+      preferredWidth: 12,
+      preferredHeight: 12,
+      activeWindows
+    });
+
+    expect(target.targetHSpan).toEqual([0, 12]);
+    expect(target.targetVSpan).toEqual([4, 8]);
+  });
+
+  test('DnD target computation should not offer stack insertion when min sizes cannot fit another window', () => {
+    const xForCol = (col: number) => fakeScreen.workarea.x + (fakeScreen.workarea.width / fakeConfig.gridSize) * col;
+    const yForRow = (row: number) => fakeScreen.workarea.y + (fakeScreen.workarea.height / fakeConfig.gridSize) * row;
+    const tightConfig: Config = { ...fakeConfig, minSpan: 3 };
+    const activeWindows = [
+      {
+        windowId: 'one',
+        state: { hIndex: 5, vIndex: 1, hSpan: [0, 12] as [number, number], vSpan: [0, 3] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'two',
+        state: { hIndex: 5, vIndex: 4, hSpan: [0, 12] as [number, number], vSpan: [3, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'three',
+        state: { hIndex: 5, vIndex: 7, hSpan: [0, 12] as [number, number], vSpan: [6, 9] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'four',
+        state: { hIndex: 5, vIndex: 10, hSpan: [0, 12] as [number, number], vSpan: [9, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const target = computeDragTarget({
+      draggedId: 'dragged-terminal',
+      mx: xForCol(6),
+      my: yForRow(6),
+      monitor: fakeScreen,
+      config: tightConfig,
+      preferredWidth: 12,
+      preferredHeight: 12,
+      activeWindows
+    });
+
+    expect(target.targetVSpan).toEqual([0, 12]);
+  });
+
+  test('DnD experimental swap should exchange non-neighbor windows with the same grid shape', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 0, vIndex: 5, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'middle-terminal',
+        state: { hIndex: 2, vIndex: 5, hSpan: [4, 6] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 5, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'left-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        experimentalSwapSameShapeWindows: true,
+        intentPoint: { h: 11, v: 6 }
+      }
+    );
+
+    expect(result['left-terminal'].hSpan).toEqual([10, 12]);
+    expect(result['right-terminal'].hSpan).toEqual([0, 2]);
+    expect(result['middle-terminal'].hSpan).toEqual([4, 6]);
+  });
+
+  test('DnD experimental swap should stay disabled unless the setting is enabled', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 0, vIndex: 5, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 5, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'left-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        experimentalSwapSameShapeWindows: false,
+        intentPoint: { h: 11, v: 6 }
+      }
+    );
+
+    expect(result['left-terminal'].hSpan).toEqual([10, 12]);
+    expect(result['right-terminal'].hSpan).not.toEqual([0, 2]);
+    expect(hasLayoutOverlaps(result)).toBe(true);
+  });
+
+  test('DnD experimental swap should not trigger for same-area windows with different shape', () => {
+    const activeWindows = [
+      {
+        windowId: 'wide-window',
+        state: { hIndex: 3, vIndex: 2, hSpan: [0, 4] as [number, number], vSpan: [0, 6] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'tall-window',
+        state: { hIndex: 9, vIndex: 5, hSpan: [8, 10] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'wide-window',
+      [8, 10],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        experimentalSwapSameShapeWindows: true,
+        intentPoint: { h: 9, v: 6 }
+      }
+    );
+
+    expect(result['wide-window'].hSpan).toEqual([8, 10]);
+    expect(result['wide-window'].vSpan).toEqual([0, 12]);
+    expect(result['tall-window'].hSpan).not.toEqual([0, 4]);
+    expect(result['tall-window'].vSpan).not.toEqual([0, 6]);
+  });
+
+  test('DnD experimental swap should not trigger near a target edge', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 0, vIndex: 5, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 5, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'left-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        experimentalSwapSameShapeWindows: true,
+        intentPoint: { h: 10.1, v: 6 }
+      }
+    );
+
+    expect(result['left-terminal'].hSpan).toEqual([10, 12]);
+    expect(result['right-terminal'].hSpan).not.toEqual([0, 2]);
+    expect(hasLayoutOverlaps(result)).toBe(true);
+  });
+
+  test('DnD layout validation should accept a resolved swap result', () => {
+    const activeWindows = [
+      {
+        windowId: 'left-terminal',
+        state: { hIndex: 0, vIndex: 5, hSpan: [0, 2] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      },
+      {
+        windowId: 'right-terminal',
+        state: { hIndex: 5, vIndex: 5, hSpan: [10, 12] as [number, number], vSpan: [0, 12] as [number, number], lastDirection: null }
+      }
+    ];
+
+    const result = calculateDragTransitions(
+      'left-terminal',
+      [10, 12],
+      [0, 12],
+      fakeConfig,
+      activeWindows,
+      {
+        experimentalSwapSameShapeWindows: true,
+        intentPoint: { h: 11, v: 6 }
+      }
+    );
+
+    expect(hasLayoutOverlaps(result)).toBe(false);
   });
 });

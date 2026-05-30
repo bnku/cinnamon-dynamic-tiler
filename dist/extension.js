@@ -28,6 +28,7 @@ class DynamicTilerExtension {
     enablePreview;
     'enable-dnd-tiling';
     'dnd-modifier-key';
+    experimentalSwapSameShapeWindows;
     'keybinding-tile-left';
     'keybinding-tile-right';
     'keybinding-tile-up';
@@ -50,6 +51,7 @@ class DynamicTilerExtension {
     dragOffsetY = 0;
     dragSession = null;
     vacancyPreview = null;
+    blockedPreview = null;
     constructor(metadata) {
         this.metadata = metadata;
         this.shell = new CinnamonAdapters_1.CinnamonShellAdapter(this);
@@ -76,6 +78,7 @@ class DynamicTilerExtension {
             this.settings.bindProperty(Settings.BindingDirection.IN, 'enablePreview', 'enablePreview', () => { });
             this.settings.bindProperty(Settings.BindingDirection.IN, 'enable-dnd-tiling', 'enable-dnd-tiling', () => { });
             this.settings.bindProperty(Settings.BindingDirection.IN, 'dnd-modifier-key', 'dnd-modifier-key', () => { });
+            this.settings.bindProperty(Settings.BindingDirection.IN, 'experimentalSwapSameShapeWindows', 'experimentalSwapSameShapeWindows', () => { });
             // Bind keybindings
             this.registerKeybinding('keybinding-tile-left', 'left');
             this.registerKeybinding('keybinding-tile-right', 'right');
@@ -188,7 +191,8 @@ class DynamicTilerExtension {
                 sourceTiledGeometry: cached ? { ...cached.tiledGeometry } : null,
                 lastDragStates: null,
                 cancelled: false,
-                floated: false
+                floated: false,
+                dndEngaged: false
             };
             // Calculate mouse offset relative to top-left corner of the dragged window
             try {
@@ -381,11 +385,12 @@ class DynamicTilerExtension {
                     isModifierPressed = false;
             }
             if (!isModifierPressed) {
-                if (this.dragSession && this.dragSession.lastDragStates) {
+                if (this.dragSession && (this.dragSession.lastDragStates || (this.dragSession.dndEngaged && !this.dragSession.floated))) {
                     this.clearPreviews();
                     this.dragSession.lastDragStates = null;
                     this.dragSession.floated = this.dragSession.wasTiled === true;
                     this.dragSession.cancelled = !this.dragSession.floated;
+                    this.dragSession.dndEngaged = false;
                     this.lastDragStates = null;
                     // Restore the original geometry and place the window smoothly under the mouse
                     try {
@@ -425,9 +430,6 @@ class DynamicTilerExtension {
                 this.dragSession.targetMonitor = activeMonitor;
             }
             const config = this.configProvider.getConfig();
-            const { workarea } = activeMonitor;
-            const colWidth = workarea.width / config.gridSize;
-            const rowHeight = workarea.height / config.gridSize;
             // Determine the target sizes based on cache or physical size
             let windowWidth = Math.round(config.gridSize / 2);
             let windowHeight = config.gridSize;
@@ -447,27 +449,6 @@ class DynamicTilerExtension {
                     windowWidth = Math.round(config.gridSize / 2);
                     windowHeight = Math.round(config.gridSize / 2);
                 }
-            }
-            // Convert cursor position to intent hotspot (cursor as center of target window span)
-            let startCol = Math.round(((mx - workarea.x) / colWidth) - windowWidth / 2);
-            // Clamp starting cells to remain fully inside the grid boundary
-            if (startCol + windowWidth > config.gridSize) {
-                startCol = config.gridSize - windowWidth;
-            }
-            if (startCol < 0)
-                startCol = 0;
-            const targetHSpan = [startCol, startCol + windowWidth];
-            const ratioY = (my - workarea.y) / workarea.height;
-            const midGrid = Math.round(config.gridSize / 2);
-            let targetVSpan;
-            if (ratioY < 0.28) {
-                targetVSpan = [0, midGrid];
-            }
-            else if (ratioY > 0.72) {
-                targetVSpan = [midGrid, config.gridSize];
-            }
-            else {
-                targetVSpan = [0, config.gridSize];
             }
             // Scan all other normal windows on this monitor to build the activeWindowsOnMonitor list first,
             // as we need this context to detect stacked windows in the target column.
@@ -510,55 +491,57 @@ class DynamicTilerExtension {
                     });
                 }
             }
-            const hasHorizontalOverlap = (spanA, spanB) => {
-                return Math.max(spanA[0], spanB[0]) < Math.min(spanA[1], spanB[1]);
-            };
-            const stackWindows = activeWindowsOnMonitor
-                .filter(w => w.windowId !== this.draggedWindowId && hasHorizontalOverlap(targetHSpan, w.state.hSpan))
-                .sort((a, b) => a.state.vSpan[0] - b.state.vSpan[0]);
-            if (stackWindows.length > 0) {
-                const cursorRow = (my - workarea.y) / rowHeight;
-                const boundaries = [0, config.gridSize];
-                for (const w of stackWindows) {
-                    boundaries.push(w.state.vSpan[0], w.state.vSpan[1]);
-                }
-                const uniqueBoundaries = Array.from(new Set(boundaries))
-                    .filter(v => v >= 0 && v <= config.gridSize)
-                    .sort((a, b) => a - b);
-                let nearestBoundary = uniqueBoundaries[0];
-                let nearestDistance = Math.abs(cursorRow - nearestBoundary);
-                for (const boundary of uniqueBoundaries) {
-                    const distance = Math.abs(cursorRow - boundary);
-                    if (distance < nearestDistance) {
-                        nearestBoundary = boundary;
-                        nearestDistance = distance;
-                    }
-                }
-                const stackTargetHeight = Math.max(config.minSpan, Math.round(config.gridSize / (stackWindows.length + 1)));
-                const boundaryThreshold = Math.max(1, stackTargetHeight / 2);
-                if (nearestDistance <= boundaryThreshold) {
-                    if (nearestBoundary <= 0) {
-                        targetVSpan = [0, stackTargetHeight];
-                    }
-                    else if (nearestBoundary >= config.gridSize) {
-                        targetVSpan = [config.gridSize - stackTargetHeight, config.gridSize];
-                    }
-                    else {
-                        let startRow = Math.round(nearestBoundary - stackTargetHeight / 2);
-                        if (startRow < 0)
-                            startRow = 0;
-                        if (startRow + stackTargetHeight > config.gridSize) {
-                            startRow = config.gridSize - stackTargetHeight;
-                        }
-                        targetVSpan = [startRow, startRow + stackTargetHeight];
-                    }
-                }
-            }
+            const dragTarget = (0, DragTiling_1.computeDragTarget)({
+                draggedId: this.draggedWindowId,
+                mx,
+                my,
+                monitor: activeMonitor,
+                config,
+                preferredWidth: windowWidth,
+                preferredHeight: windowHeight,
+                activeWindows: activeWindowsOnMonitor
+            });
             // Calculate the elastic pushes
-            const dragStates = (0, DragTiling_1.calculateDragTransitions)(this.draggedWindowId, targetHSpan, targetVSpan, config, activeWindowsOnMonitor);
+            const dragStates = (0, DragTiling_1.calculateDragTransitions)(this.draggedWindowId, dragTarget.targetHSpan, dragTarget.targetVSpan, config, activeWindowsOnMonitor, {
+                experimentalSwapSameShapeWindows: this.experimentalSwapSameShapeWindows === true,
+                intentPoint: dragTarget.intentPoint
+            });
+            if ((0, DragTiling_1.hasLayoutOverlaps)(dragStates)) {
+                this.clearPlacementPreviews();
+                this.lastDragStates = null;
+                if (this.dragSession) {
+                    this.dragSession.lastDragStates = null;
+                    this.dragSession.cancelled = true;
+                    this.dragSession.floated = false;
+                    this.dragSession.dndEngaged = true;
+                }
+                try {
+                    if (!this.blockedPreview) {
+                        this.blockedPreview = new TilePreview_1.TilePreview();
+                    }
+                    const win = this.shell._findMetaWindow(this.draggedWindowId);
+                    if (win) {
+                        const blockedState = {
+                            hIndex: TilingEngine_1.TilingEngine.spanToHIndex(dragTarget.targetHSpan),
+                            vIndex: TilingEngine_1.TilingEngine.spanToVIndex(dragTarget.targetVSpan),
+                            hSpan: [...dragTarget.targetHSpan],
+                            vSpan: [...dragTarget.targetVSpan],
+                            lastDirection: null
+                        };
+                        const frameGeom = TilingEngine_1.TilingEngine.stateToGeometry(blockedState, activeMonitor, config);
+                        this.blockedPreview.show(win, frameGeom, parseInt(activeMonitor.id), true, 80, 140, false, 'blocked');
+                    }
+                }
+                catch (e) { }
+                return true;
+            }
+            this.clearBlockedPreview();
             this.lastDragStates = dragStates;
             if (this.dragSession) {
                 this.dragSession.lastDragStates = dragStates;
+                this.dragSession.cancelled = false;
+                this.dragSession.floated = false;
+                this.dragSession.dndEngaged = true;
             }
             // Draw vacancy-outline at the old window position if it was tiled
             if (this.dragSession && this.dragSession.wasTiled && this.dragSession.sourceTiledGeometry) {
@@ -692,6 +675,16 @@ class DynamicTilerExtension {
                 this.cache.clearState(this.draggedWindowId);
             }
             else if (session.cancelled) {
+                if (session.wasTiled && session.sourceTiledGeometry && session.sourceState) {
+                    try {
+                        this.shell.unmaximizeWindow(this.draggedWindowId);
+                        this.shell.applyGeometry(this.draggedWindowId, session.sourceTiledGeometry);
+                        this.cache.saveState(this.draggedWindowId, session.sourceState, session.sourceTiledGeometry, session.sourceGeometry || session.sourceTiledGeometry);
+                    }
+                    catch (e) {
+                        global.logError(`[Dynamic Tiler] DnD cancel restore error for window ${this.draggedWindowId}: ${e.message}`);
+                    }
+                }
                 global.log(`[Dynamic Tiler] DnD cancelled safely for window ${this.draggedWindowId}; layout cache left unchanged`);
             }
         }
@@ -789,6 +782,10 @@ class DynamicTilerExtension {
         }
     }
     clearPreviews() {
+        this.clearPlacementPreviews();
+        this.clearBlockedPreview();
+    }
+    clearPlacementPreviews() {
         for (const [id, preview] of Object.entries(this.previewsMap)) {
             try {
                 preview.hide();
@@ -804,6 +801,16 @@ class DynamicTilerExtension {
             }
             catch (e) { }
             this.vacancyPreview = null;
+        }
+    }
+    clearBlockedPreview() {
+        if (this.blockedPreview) {
+            try {
+                this.blockedPreview.hide();
+                this.blockedPreview.destroy();
+            }
+            catch (e) { }
+            this.blockedPreview = null;
         }
     }
     applyConfigurationChange() {

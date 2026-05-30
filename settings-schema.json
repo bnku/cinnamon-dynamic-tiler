@@ -1,0 +1,134 @@
+{
+  "layout1": {
+    "type": "layout",
+    "pages": ["page1"],
+    "page1": {
+      "type": "page",
+      "title": "Settings",
+      "sections": ["section_tiling", "section_dnd", "section_keybindings"]
+    },
+    "section_tiling": {
+      "type": "section",
+      "title": "Tiling & Animations",
+      "keys": ["gaps", "gridSize", "minSpan", "step", "enablePreview"]
+    },
+    "section_dnd": {
+      "type": "section",
+      "title": "Drag-and-Drop Snapping",
+      "keys": ["enable-dnd-tiling", "dnd-modifier-key", "experimentalSwapSameShapeWindows"]
+    },
+    "section_keybindings": {
+      "type": "section",
+      "title": "Keybindings",
+      "keys": [
+        "keybinding-tile-left",
+        "keybinding-tile-right",
+        "keybinding-tile-up",
+        "keybinding-tile-down",
+        "keybinding-shift-left",
+        "keybinding-shift-right",
+        "keybinding-shift-up",
+        "keybinding-shift-down",
+        "keybinding-restore"
+      ]
+    }
+  },
+  "gaps": {
+    "type": "spinbutton",
+    "default": 8,
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "units": "pixels",
+    "description": "Gap size between windows"
+  },
+  "gridSize": {
+    "type": "spinbutton",
+    "default": 12,
+    "min": 4,
+    "max": 24,
+    "step": 2,
+    "description": "Grid size (number of columns)"
+  },
+  "minSpan": {
+    "type": "spinbutton",
+    "default": 2,
+    "min": 1,
+    "max": 6,
+    "step": 1,
+    "description": "Minimum window span"
+  },
+  "step": {
+    "type": "spinbutton",
+    "default": 1,
+    "min": 1,
+    "max": 4,
+    "step": 1,
+    "description": "Resize step size"
+  },
+  "enablePreview": {
+    "type": "switch",
+    "default": true,
+    "description": "Enable semi-transparent tile preview animation (ghost frame)"
+  },
+  "enable-dnd-tiling": {
+    "type": "switch",
+    "default": true,
+    "description": "Enable Drag-and-Drop window tiling"
+  },
+  "dnd-modifier-key": {
+    "type": "keybinding",
+    "default": "<Shift>d",
+    "description": "Hold modifiers of this key during drag to snap windows (Default: Shift)"
+  },
+  "experimentalSwapSameShapeWindows": {
+    "type": "switch",
+    "default": false,
+    "description": "Experimental: swap equal-size tiled windows when dropping in the center of another window"
+  },
+  "keybinding-tile-left": {
+    "type": "keybinding",
+    "default": "<Super>Left",
+    "description": "Tile left"
+  },
+  "keybinding-tile-right": {
+    "type": "keybinding",
+    "default": "<Super>Right",
+    "description": "Tile right"
+  },
+  "keybinding-tile-up": {
+    "type": "keybinding",
+    "default": "<Super>Up",
+    "description": "Tile up"
+  },
+  "keybinding-tile-down": {
+    "type": "keybinding",
+    "default": "<Super>Down",
+    "description": "Tile down"
+  },
+  "keybinding-shift-left": {
+    "type": "keybinding",
+    "default": "<Control><Super>Left",
+    "description": "Shift left"
+  },
+  "keybinding-shift-right": {
+    "type": "keybinding",
+    "default": "<Control><Super>Right",
+    "description": "Shift right"
+  },
+  "keybinding-shift-up": {
+    "type": "keybinding",
+    "default": "<Control><Super>Up",
+    "description": "Shift up"
+  },
+  "keybinding-shift-down": {
+    "type": "keybinding",
+    "default": "<Control><Super>Down",
+    "description": "Shift down"
+  },
+  "keybinding-restore": {
+    "type": "keybinding",
+    "default": "<Super>BackSpace",
+    "description": "Restore window"
+  }
+}
