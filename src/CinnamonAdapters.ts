@@ -178,7 +178,7 @@ export class CinnamonShellAdapter implements IShellAdapter {
     }
   }
 
-  private _findMetaWindow(stableSequence: string): any {
+  public _findMetaWindow(stableSequence: string): any {
     const actors = global.get_window_actors() || [];
     const actor = actors.find((a: any) => {
       return a.meta_window && a.meta_window.get_stable_sequence().toString() === stableSequence;

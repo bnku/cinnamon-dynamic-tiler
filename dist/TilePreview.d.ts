@@ -10,7 +10,7 @@ export declare class TilePreview {
         y: number;
         width: number;
         height: number;
-    }, monitorIndex: number, animate: boolean, animTime?: number): void;
+    }, monitorIndex: number, animate: boolean, animTime?: number, customOpacity?: number, isSecondary?: boolean): void;
     hide(): void;
     private _reset;
     destroy(): void;

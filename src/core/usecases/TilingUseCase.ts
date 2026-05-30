@@ -101,15 +101,40 @@ export class TilingUseCase {
 
           const SNAP_THRESHOLD = 80; // High tolerance for matching grid structures
           if (diffX <= SNAP_THRESHOLD && diffY <= SNAP_THRESHOLD && diffW <= SNAP_THRESHOLD && diffH <= SNAP_THRESHOLD) {
-            const restoredState = {
-              hIndex: TilingEngine.spanToHIndex(hSpan),
-              vIndex: TilingEngine.spanToVIndex(vSpan),
-              hSpan,
-              vSpan,
-              lastDirection: null as any
-            };
-            this.cache.saveState(id, restoredState, currentVisible, currentGeom);
-            cachedWin = this.cache.getCachedWindow(id)!;
+            // Check if there is already a tiled window in the cache that overlaps with this span on the same monitor
+            let hasOverlap = false;
+            for (const [cachedId, cachedW] of Object.entries(allCached)) {
+              if (cachedId === id) continue;
+
+              let cachedMonitor = currentMonitor;
+              try {
+                const g = this.shell.getWindowGeometry(cachedId);
+                cachedMonitor = this.shell.findMonitorForWindow(g, monitors);
+              } catch {
+                cachedMonitor = this.shell.findMonitorForWindow(cachedW.tiledGeometry, monitors);
+              }
+
+              if (cachedMonitor.id === currentMonitor.id) {
+                const hasH = Math.max(hSpan[0], cachedW.state.hSpan[0]) < Math.min(hSpan[1], cachedW.state.hSpan[1]);
+                const hasV = Math.max(vSpan[0], cachedW.state.vSpan[0]) < Math.min(vSpan[1], cachedW.state.vSpan[1]);
+                if (hasH && hasV) {
+                  hasOverlap = true;
+                  break;
+                }
+              }
+            }
+
+            if (!hasOverlap) {
+              const restoredState = {
+                hIndex: TilingEngine.spanToHIndex(hSpan),
+                vIndex: TilingEngine.spanToVIndex(vSpan),
+                hSpan,
+                vSpan,
+                lastDirection: null as any
+              };
+              this.cache.saveState(id, restoredState, currentVisible, currentGeom);
+              cachedWin = this.cache.getCachedWindow(id)!;
+            }
           }
         } catch {
           // Ignore failures for individual windows
@@ -200,7 +225,16 @@ export class TilingUseCase {
         const nextGeom = TilingEngine.stateToGeometry(nextState, activeMonitor, config);
         this.shell.unmaximizeWindow(id);
         this.shell.applyGeometry(id, nextGeom);
-        this.cache.saveState(id, nextState, nextGeom, originalGeom);
+
+        // Delay caching slightly to read the actual physical geometry from Mutter
+        setTimeout(() => {
+          try {
+            const realGeom = this.shell.getWindowGeometry(id);
+            this.cache.saveState(id, nextState, realGeom, originalGeom);
+          } catch {
+            this.cache.saveState(id, nextState, nextGeom, originalGeom);
+          }
+        }, 100);
       } catch {
         // Игнорируем ошибки для отдельных окон
       }
@@ -216,7 +250,16 @@ export class TilingUseCase {
       try {
         this.shell.unmaximizeWindow(windowId);
         this.shell.applyGeometry(windowId, nextGeom);
-        this.cache.saveState(windowId, activeNextState, nextGeom, originalGeom);
+
+        // Delay caching slightly to read the actual physical geometry from Mutter
+        setTimeout(() => {
+          try {
+            const realGeom = this.shell.getWindowGeometry(windowId);
+            this.cache.saveState(windowId, activeNextState, realGeom, originalGeom);
+          } catch {
+            this.cache.saveState(windowId, activeNextState, nextGeom, originalGeom);
+          }
+        }, 100);
         this.shell.raiseWindow(windowId);
       } catch {
         // Игнорируем ошибки для активного окна

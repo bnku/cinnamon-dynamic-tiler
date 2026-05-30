@@ -31,5 +31,5 @@ export declare class CinnamonShellAdapter implements IShellAdapter {
     applyGeometry(id: string, geom: Geometry): void;
     unmaximizeWindow(id: string): void;
     raiseWindow(id: string): void;
-    private _findMetaWindow;
+    _findMetaWindow(stableSequence: string): any;
 }

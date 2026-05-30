@@ -13,14 +13,19 @@ class TilePreview {
     anim_time = 150;
     constructor() {
         this.actor = new St.Bin({ style_class: 'tile-preview', important: true });
+        this.actor.set_style('background-color: rgba(52, 152, 219, 0.32); border: 2.5px solid #3498db; border-radius: 8px;');
         global.window_group.add_actor(this.actor);
         this._reset();
     }
-    show(window, tileRect, monitorIndex, animate, animTime) {
+    show(window, tileRect, monitorIndex, animate, animTime, customOpacity, isSecondary) {
         this.anim_time = animTime || 150;
-        const windowActor = window.get_compositor_private();
-        if (!windowActor)
-            return;
+        // Apply appropriate styling based on whether it is the primary focus landing or secondary shifted window
+        if (isSecondary) {
+            this.actor.set_style('background-color: rgba(52, 152, 219, 0.08); border: 1.5px dashed rgba(52, 152, 219, 0.5); border-radius: 6px;');
+        }
+        else {
+            this.actor.set_style('background-color: rgba(52, 152, 219, 0.32); border: 2.5px solid #3498db; border-radius: 8px;');
+        }
         if (this._rect &&
             this._rect.x === tileRect.x &&
             this._rect.y === tileRect.y &&
@@ -33,19 +38,26 @@ class TilePreview {
         this._rect = tileRect;
         const { x, y, width, height } = tileRect;
         if (!this._showing || changeMonitor) {
-            const monitor = Main.layoutManager.monitors[monitorIndex];
-            const monitorRect = new Meta.Rectangle({
-                x: monitor.x,
-                y: monitor.y,
-                width: monitor.width,
-                height: monitor.height
-            });
-            const [intersected, rect] = window.get_buffer_rect().intersect(monitorRect);
-            if (intersected) {
-                this.actor.set_size(rect.width, rect.height);
-                this.actor.set_position(rect.x, rect.y);
+            try {
+                const monitor = Main.layoutManager.monitors[monitorIndex];
+                const monitorRect = new Meta.Rectangle({
+                    x: monitor.x,
+                    y: monitor.y,
+                    width: monitor.width,
+                    height: monitor.height
+                });
+                const [intersected, rect] = window.get_buffer_rect().intersect(monitorRect);
+                if (intersected) {
+                    this.actor.set_size(rect.width, rect.height);
+                    this.actor.set_position(rect.x, rect.y);
+                }
+                else {
+                    this.actor.set_size(width, height);
+                    this.actor.set_position(x, y);
+                }
             }
-            else {
+            catch (e) {
+                // Robust fallback if window is currently grabbed or unavailable
                 this.actor.set_size(width, height);
                 this.actor.set_position(x, y);
             }
@@ -53,12 +65,13 @@ class TilePreview {
         }
         this._showing = true;
         this.actor.show();
+        const targetOpacity = customOpacity !== undefined ? customOpacity : (isSecondary ? 120 : 180);
         const props = {
             x,
             y,
             width,
             height,
-            opacity: 180, // Slightly semi-transparent preview
+            opacity: targetOpacity,
         };
         if (animate && Main.animations_enabled) {
             this.actor.remove_all_transitions();
@@ -74,7 +87,7 @@ class TilePreview {
         this.actor.y = y;
         this.actor.width = width;
         this.actor.height = height;
-        this.actor.opacity = 180;
+        this.actor.opacity = targetOpacity;
     }
     hide() {
         if (!this._showing)
