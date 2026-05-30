@@ -16,7 +16,7 @@ export declare class TilingEngine {
     /**
      * Находит наиболее подходящий вертикальный спан для первого тайлинга в зависимости от направления и соседей
      */
-    static getInitialVSpan(direction: 'up' | 'down', siblingSpans: {
+    static getInitialVSpan(direction: 'up' | 'down' | 'shift-up' | 'shift-down', siblingSpans: {
         hSpan: [number, number];
         vSpan: [number, number];
     }[], config: Config, fixedHSpan?: [number, number]): [number, number];

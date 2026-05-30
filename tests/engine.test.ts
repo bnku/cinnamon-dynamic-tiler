@@ -676,5 +676,43 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     expect(chain['winA'].hSpan).toEqual([0, 6]);
     expect(chain['winB'].hSpan).toEqual([6, 8]);
   });
+
+  test('should handle first shift-up keypress', () => {
+    const startState = TilingEngine.getDefaultState();
+    const nextState = TilingEngine.calculateNextState(startState, 'shift-up', fakeConfig);
+
+    expect(nextState.hSpan).toEqual([0, 12]);
+    expect(nextState.vSpan).toEqual([0, 6]);
+    expect(nextState.lastDirection).toBe('shift-up');
+  });
+
+  test('should handle first shift-down keypress', () => {
+    const startState = TilingEngine.getDefaultState();
+    const nextState = TilingEngine.calculateNextState(startState, 'shift-down', fakeConfig);
+
+    expect(nextState.hSpan).toEqual([0, 12]);
+    expect(nextState.vSpan).toEqual([6, 12]);
+    expect(nextState.lastDirection).toBe('shift-down');
+  });
+
+  test('should handle Corner Mode transitions for shift-up and shift-down', () => {
+    const stateLeft: WindowState = {
+      hIndex: 0,
+      vIndex: 5,
+      hSpan: [0, 6],
+      vSpan: [0, 12],
+      lastDirection: 'left'
+    };
+
+    const nextStateShiftUp = TilingEngine.calculateNextState(stateLeft, 'shift-up', fakeConfig);
+    expect(nextStateShiftUp.hSpan).toEqual([0, 6]);
+    expect(nextStateShiftUp.vSpan).toEqual([0, 6]);
+    expect(nextStateShiftUp.lastDirection).toBe('shift-up');
+
+    const nextStateShiftDown = TilingEngine.calculateNextState(stateLeft, 'shift-down', fakeConfig);
+    expect(nextStateShiftDown.hSpan).toEqual([0, 6]);
+    expect(nextStateShiftDown.vSpan).toEqual([6, 12]);
+    expect(nextStateShiftDown.lastDirection).toBe('shift-down');
+  });
 });
 

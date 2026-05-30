@@ -12,7 +12,7 @@ export interface ScreenInfo {
     y: number;
     workarea: Geometry;
 }
-export type Direction = 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right';
+export type Direction = 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right' | 'shift-up' | 'shift-down';
 export interface WindowState {
     hIndex: number;
     vIndex: number;

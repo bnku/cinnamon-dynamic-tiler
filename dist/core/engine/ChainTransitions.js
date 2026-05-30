@@ -41,7 +41,7 @@ class ChainTransitions {
         const nextActiveState = calculateNextStateFn(currentActiveState, direction, config, siblings);
         result[activeId] = nextActiveState;
         // Если это сдвиг Shift, цепочка ресайза не срабатывает, просто сдвигаем окно
-        if (direction === 'shift-left' || direction === 'shift-right') {
+        if (direction === 'shift-left' || direction === 'shift-right' || direction === 'shift-up' || direction === 'shift-down') {
             return result;
         }
         // Приводим все остальные окна в списке к корректным hSpan/vSpan

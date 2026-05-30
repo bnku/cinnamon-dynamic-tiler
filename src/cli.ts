@@ -19,7 +19,7 @@ const daemon = new UdpDaemon(tilingUseCase, PORT, HOST);
 function printUsage(): void {
   console.log('Usage:');
   console.log('  dynamic-tiler tile <left|right|up|down>  - Snap and resize active window');
-  console.log('  dynamic-tiler shift <left|right>        - Quick shift window to left/right half');
+  console.log('  dynamic-tiler shift <left|right|up|down> - Quick shift window to left/right/up/down half');
   console.log('  dynamic-tiler restore                    - Restore active window to its original pre-tiled size');
   console.log('  dynamic-tiler clear                      - Clear current window cached state');
   console.log('  dynamic-tiler start                      - Start background UDP daemon');

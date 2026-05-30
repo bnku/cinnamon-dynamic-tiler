@@ -20,6 +20,11 @@ class InitialLayout {
      * Находит наиболее подходящий вертикальный спан для первого тайлинга в зависимости от направления и соседей
      */
     static getInitialVSpan(direction, siblingSpans, config, fixedHSpan) {
+        const halfGrid = Math.round(config.gridSize / 2);
+        if (direction === 'shift-up')
+            return [0, halfGrid];
+        if (direction === 'shift-down')
+            return [halfGrid, config.gridSize];
         const spans = this.getInitialSpans(direction, siblingSpans, config, {
             fixedHSpan: fixedHSpan || [0, config.gridSize]
         });
@@ -47,6 +52,12 @@ class InitialLayout {
         }
         if (direction === 'shift-right') {
             return { hSpan: [halfGrid, config.gridSize], vSpan: options.fixedVSpan || [0, config.gridSize] };
+        }
+        if (direction === 'shift-up') {
+            return { hSpan: options.fixedHSpan || [0, config.gridSize], vSpan: [0, halfGrid] };
+        }
+        if (direction === 'shift-down') {
+            return { hSpan: options.fixedHSpan || [0, config.gridSize], vSpan: [halfGrid, config.gridSize] };
         }
         if (direction === 'left') {
             let bestHSpan = [0, halfGrid];

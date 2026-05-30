@@ -37,7 +37,7 @@ export class TilingEngine {
    * Находит наиболее подходящий вертикальный спан для первого тайлинга в зависимости от направления и соседей
    */
   public static getInitialVSpan(
-    direction: 'up' | 'down',
+    direction: 'up' | 'down' | 'shift-up' | 'shift-down',
     siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
     config: Config,
     fixedHSpan?: [number, number]
@@ -124,14 +124,30 @@ export class TilingEngine {
           nextState.vIndex = this.spanToVIndex(nextState.vSpan);
           nextState.lastDirection = 'shift-right';
           break;
+
+        case 'shift-up':
+          nextState.hSpan = [0, config.gridSize];
+          nextState.vSpan = [0, halfGrid];
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
+          nextState.lastDirection = 'shift-up';
+          break;
+
+        case 'shift-down':
+          nextState.hSpan = [0, config.gridSize];
+          nextState.vSpan = [halfGrid, config.gridSize];
+          nextState.hIndex = this.spanToHIndex(nextState.hSpan);
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
+          nextState.lastDirection = 'shift-down';
+          break;
       }
     } else {
       // Проверка на смену оси (Corner Mode)
       const isHorizontalOld = currentState.lastDirection === 'left' || currentState.lastDirection === 'right' || currentState.lastDirection === 'shift-left' || currentState.lastDirection === 'shift-right';
-      const isVerticalOld = currentState.lastDirection === 'up' || currentState.lastDirection === 'down';
+      const isVerticalOld = currentState.lastDirection === 'up' || currentState.lastDirection === 'down' || currentState.lastDirection === 'shift-up' || currentState.lastDirection === 'shift-down';
       
       const isHorizontalNew = direction === 'left' || direction === 'right' || direction === 'shift-left' || direction === 'shift-right';
-      const isVerticalNew = direction === 'up' || direction === 'down';
+      const isVerticalNew = direction === 'up' || direction === 'down' || direction === 'shift-up' || direction === 'shift-down';
 
       // Если обе оси уже не full, Corner Mode переключается в "эластичный ресайз внутри угла"
       const isBothSpansCompressed = 
@@ -142,7 +158,7 @@ export class TilingEngine {
         if (isHorizontalOld && isVerticalNew) {
           nextState.hSpan = currentState.hSpan;
           nextState.hIndex = currentState.hIndex;
-          nextState.vSpan = this.getInitialVSpan(direction as 'up' | 'down', siblingSpans, config, currentState.hSpan);
+          nextState.vSpan = this.getInitialVSpan(direction as 'up' | 'down' | 'shift-up' | 'shift-down', siblingSpans, config, currentState.hSpan);
           nextState.vIndex = this.spanToVIndex(nextState.vSpan);
           nextState.lastDirection = direction;
           return nextState;
@@ -282,6 +298,18 @@ export class TilingEngine {
           nextState.hSpan = [halfGrid, config.gridSize];
           nextState.hIndex = this.spanToHIndex(nextState.hSpan);
           nextState.lastDirection = 'shift-right';
+          break;
+
+        case 'shift-up':
+          nextState.vSpan = [0, halfGrid];
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
+          nextState.lastDirection = 'shift-up';
+          break;
+
+        case 'shift-down':
+          nextState.vSpan = [halfGrid, config.gridSize];
+          nextState.vIndex = this.spanToVIndex(nextState.vSpan);
+          nextState.lastDirection = 'shift-down';
           break;
       }
     }

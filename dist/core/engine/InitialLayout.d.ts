@@ -10,14 +10,14 @@ export declare class InitialLayout {
     /**
      * Находит наиболее подходящий вертикальный спан для первого тайлинга в зависимости от направления и соседей
      */
-    static getInitialVSpan(direction: 'up' | 'down', siblingSpans: {
+    static getInitialVSpan(direction: 'up' | 'down' | 'shift-up' | 'shift-down', siblingSpans: {
         hSpan: [number, number];
         vSpan: [number, number];
     }[], config: Config, fixedHSpan?: [number, number]): [number, number];
     /**
      * Находит наиболее подходящий двумерный макет для первого тайлинга
      */
-    static getInitialSpans(direction: 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right', siblingSpans: {
+    static getInitialSpans(direction: 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right' | 'shift-up' | 'shift-down', siblingSpans: {
         hSpan: [number, number];
         vSpan: [number, number];
     }[], config: Config, options?: {

@@ -24,11 +24,15 @@ export class InitialLayout {
    * Находит наиболее подходящий вертикальный спан для первого тайлинга в зависимости от направления и соседей
    */
   public static getInitialVSpan(
-    direction: 'up' | 'down',
+    direction: 'up' | 'down' | 'shift-up' | 'shift-down',
     siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
     config: Config,
     fixedHSpan?: [number, number]
   ): [number, number] {
+    const halfGrid = Math.round(config.gridSize / 2);
+    if (direction === 'shift-up') return [0, halfGrid];
+    if (direction === 'shift-down') return [halfGrid, config.gridSize];
+
     const spans = this.getInitialSpans(direction, siblingSpans, config, { 
       fixedHSpan: fixedHSpan || [0, config.gridSize] 
     });
@@ -39,7 +43,7 @@ export class InitialLayout {
    * Находит наиболее подходящий двумерный макет для первого тайлинга
    */
   public static getInitialSpans(
-    direction: 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right',
+    direction: 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right' | 'shift-up' | 'shift-down',
     siblingSpans: { hSpan: [number, number]; vSpan: [number, number] }[],
     config: Config,
     options: { fixedHSpan?: [number, number]; fixedVSpan?: [number, number] } = {}
@@ -64,6 +68,12 @@ export class InitialLayout {
     }
     if (direction === 'shift-right') {
       return { hSpan: [halfGrid, config.gridSize], vSpan: options.fixedVSpan || [0, config.gridSize] };
+    }
+    if (direction === 'shift-up') {
+      return { hSpan: options.fixedHSpan || [0, config.gridSize], vSpan: [0, halfGrid] };
+    }
+    if (direction === 'shift-down') {
+      return { hSpan: options.fixedHSpan || [0, config.gridSize], vSpan: [halfGrid, config.gridSize] };
     }
 
     if (direction === 'left') {

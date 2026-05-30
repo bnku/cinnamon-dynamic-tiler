@@ -14,7 +14,7 @@ export interface ScreenInfo {
   workarea: Geometry;
 }
 
-export type Direction = 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right';
+export type Direction = 'left' | 'right' | 'up' | 'down' | 'shift-left' | 'shift-right' | 'shift-up' | 'shift-down';
 
 export interface WindowState {
   // Индекс положения окна по горизонтали в 12-колоночной сетке (0..10)

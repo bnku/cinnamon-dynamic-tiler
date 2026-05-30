@@ -58,7 +58,7 @@ export class ChainTransitions {
     result[activeId] = nextActiveState;
 
     // Если это сдвиг Shift, цепочка ресайза не срабатывает, просто сдвигаем окно
-    if (direction === 'shift-left' || direction === 'shift-right') {
+    if (direction === 'shift-left' || direction === 'shift-right' || direction === 'shift-up' || direction === 'shift-down') {
       return result;
     }
 
