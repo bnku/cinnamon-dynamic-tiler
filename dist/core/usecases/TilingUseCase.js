@@ -14,6 +14,9 @@ class TilingUseCase {
     tile(direction) {
         // 0. Получаем конфигурацию
         const config = this.configProvider.getConfig();
+        const configForMonitor = (monitor) => this.configProvider.getConfigForMonitor
+            ? this.configProvider.getConfigForMonitor(monitor)
+            : config;
         // 1. Получаем ID активного окна
         const windowId = this.shell.getActiveWindowId();
         if (!windowId) {
@@ -25,6 +28,7 @@ class TilingUseCase {
         const monitors = this.shell.getActiveMonitors();
         // 3. Определяем текущий монитор активного окна
         const activeMonitor = this.shell.findMonitorForWindow(windowGeom, monitors);
+        const activeConfig = configForMonitor(activeMonitor);
         // 4. Сканируем видимые окна и фильтруем активные затайленные на этом мониторе
         const visibleWindowIds = this.shell.getVisibleWindowIds();
         const allCached = this.cache.getAllCachedWindows();
@@ -51,8 +55,9 @@ class TilingUseCase {
                 if (diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD) {
                     activeWindowIsResized = true;
                     const currentMonitor = this.shell.findMonitorForWindow(currentVisible, monitors);
-                    const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(currentVisible, currentMonitor, config);
-                    const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(currentVisible, currentMonitor, config);
+                    const currentConfig = configForMonitor(currentMonitor);
+                    const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(currentVisible, currentMonitor, currentConfig);
+                    const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(currentVisible, currentMonitor, currentConfig);
                     activeWindowPhysicalState = {
                         state: {
                             ...activeCached.state,
@@ -85,8 +90,9 @@ class TilingUseCase {
                     };
                     const currentMonitor = this.shell.findMonitorForWindow(currentVisible, monitors);
                     // Convert current physical geometry to logical grid spans
-                    const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(currentVisible, currentMonitor, config);
-                    const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(currentVisible, currentMonitor, config);
+                    const currentConfig = configForMonitor(currentMonitor);
+                    const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(currentVisible, currentMonitor, currentConfig);
+                    const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(currentVisible, currentMonitor, currentConfig);
                     // Verify if window matches grid layout with small tolerance
                     const testState = {
                         hIndex: TilingEngine_1.TilingEngine.spanToHIndex(hSpan),
@@ -95,7 +101,7 @@ class TilingUseCase {
                         vSpan,
                         lastDirection: null
                     };
-                    const idealGeom = TilingEngine_1.TilingEngine.stateToGeometry(testState, currentMonitor, config);
+                    const idealGeom = TilingEngine_1.TilingEngine.stateToGeometry(testState, currentMonitor, currentConfig);
                     const diffX = Math.abs(currentVisible.x - idealGeom.x);
                     const diffY = Math.abs(currentVisible.y - idealGeom.y);
                     const diffW = Math.abs(currentVisible.width - idealGeom.width);
@@ -173,8 +179,9 @@ class TilingUseCase {
                         const diffH = Math.abs(currentVisible.height - cachedWin.tiledGeometry.height);
                         const THRESHOLD = 80;
                         if (diffX > THRESHOLD || diffY > THRESHOLD || diffW > THRESHOLD || diffH > THRESHOLD) {
-                            const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(currentVisible, currentMonitor, config);
-                            const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(currentVisible, currentMonitor, config);
+                            const currentConfig = configForMonitor(currentMonitor);
+                            const hSpan = TilingEngine_1.TilingEngine.geometryToHSpan(currentVisible, currentMonitor, currentConfig);
+                            const vSpan = TilingEngine_1.TilingEngine.geometryToVSpan(currentVisible, currentMonitor, currentConfig);
                             windowState = {
                                 ...cachedWin.state,
                                 hSpan,
@@ -206,7 +213,7 @@ class TilingUseCase {
             });
         }
         // 5. Рассчитываем переходы цепного тайлинга окон
-        const chainStates = TilingEngine_1.TilingEngine.calculateChainTransitions(windowId, direction, config, activeWindowsOnMonitor);
+        const chainStates = TilingEngine_1.TilingEngine.calculateChainTransitions(windowId, direction, activeConfig, activeWindowsOnMonitor);
         // 6. Применяем новые размеры сначала ко всем соседям цепочки
         for (const [id, nextState] of Object.entries(chainStates)) {
             if (id === windowId)
@@ -215,7 +222,7 @@ class TilingUseCase {
                 const cachedWin = allCached[id];
                 const currentGeom = this.shell.getWindowGeometry(id);
                 const originalGeom = cachedWin ? (cachedWin.originalGeometry || currentGeom) : currentGeom;
-                const nextGeom = TilingEngine_1.TilingEngine.stateToGeometry(nextState, activeMonitor, config);
+                const nextGeom = TilingEngine_1.TilingEngine.stateToGeometry(nextState, activeMonitor, activeConfig);
                 this.shell.unmaximizeWindow(id);
                 this.shell.applyGeometry(id, nextGeom);
                 // Delay caching slightly to read the actual physical geometry from Mutter
@@ -238,7 +245,7 @@ class TilingUseCase {
         if (activeNextState) {
             const cachedWin = allCached[windowId];
             const originalGeom = cachedWin ? (cachedWin.originalGeometry || windowGeom) : windowGeom;
-            const nextGeom = TilingEngine_1.TilingEngine.stateToGeometry(activeNextState, activeMonitor, config);
+            const nextGeom = TilingEngine_1.TilingEngine.stateToGeometry(activeNextState, activeMonitor, activeConfig);
             try {
                 this.shell.unmaximizeWindow(windowId);
                 this.shell.applyGeometry(windowId, nextGeom);

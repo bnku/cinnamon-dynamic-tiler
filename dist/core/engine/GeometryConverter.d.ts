@@ -1,4 +1,4 @@
-import { Geometry, ScreenInfo, WindowState, Config } from '../types';
+import { Config, Geometry, ScreenInfo, WindowState } from '../types';
 export declare class GeometryConverter {
     /**
      * Преобразует физическую геометрию окна в логические колонки (hSpan) на указанном мониторе

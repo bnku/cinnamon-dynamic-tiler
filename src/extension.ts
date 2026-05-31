@@ -3,7 +3,7 @@ import { TilingUseCase } from './core/usecases/TilingUseCase';
 import { CinnamonShellAdapter, CinnamonCache, CinnamonConfigProvider } from './CinnamonAdapters';
 import { collapseVacancy, computeDragTarget, restoreDragTransactionHistory, shouldCancelSourceReturn, shouldFloatAfterModifierRelease, solveDragTransitions, type DragBlockReason, type DragSolveResult, type DragTargetResult, type DragTransactionSnapshot } from './DragTiling';
 import { TilePreview } from './TilePreview';
-import { WindowState } from './core/types';
+import { Config, ScreenInfo, WindowState, getGridColumns, getGridRows, getMinColumnSpan, getMinRowSpan } from './core/types';
 
 declare const imports: any;
 declare const global: any;
@@ -25,9 +25,21 @@ class DynamicTilerExtension {
   // Settings values automatically bound by Cinnamon settings system
   public gaps!: number;
   public gridSize!: number;
+  public gridColumns!: number;
+  public gridRows!: number;
+  public horizontalGridColumns!: number;
+  public horizontalGridRows!: number;
+  public verticalGridColumns!: number;
+  public verticalGridRows!: number;
+  public ultrawideGridColumns!: number;
+  public ultrawideGridRows!: number;
+  public monitorGridOverrides!: string;
   public minSpan!: number;
+  public minColumnSpan!: number;
+  public minRowSpan!: number;
   public step!: number;
   public enablePreview!: boolean;
+  public enableDebugLogs!: boolean;
   public 'enable-dnd-tiling'!: boolean;
   public 'dnd-modifier-key'!: string;
   public 'dnd-swap-modifier-key'!: string;
@@ -69,6 +81,71 @@ class DynamicTilerExtension {
     this.useCase = new TilingUseCase(this.shell, this.cache, this.configProvider);
   }
 
+  public getConfigForMonitor(monitor: ScreenInfo | null): Config {
+    const fallbackGrid = this.gridSize !== undefined ? this.gridSize : 12;
+    const baseColumns = this.gridColumns !== undefined ? this.gridColumns : fallbackGrid;
+    const baseRows = this.gridRows !== undefined ? this.gridRows : 6;
+    let gridColumns = baseColumns;
+    let gridRows = baseRows;
+
+    if (monitor) {
+      const ratio = monitor.workarea.width / Math.max(1, monitor.workarea.height);
+      if (ratio >= 2.1) {
+        gridColumns = this.ultrawideGridColumns !== undefined ? this.ultrawideGridColumns : 12;
+        gridRows = this.ultrawideGridRows !== undefined ? this.ultrawideGridRows : 6;
+      } else if (monitor.workarea.height > monitor.workarea.width) {
+        gridColumns = this.verticalGridColumns !== undefined ? this.verticalGridColumns : gridColumns;
+        gridRows = this.verticalGridRows !== undefined ? this.verticalGridRows : gridRows;
+      } else {
+        gridColumns = this.horizontalGridColumns !== undefined ? this.horizontalGridColumns : 6;
+        gridRows = this.horizontalGridRows !== undefined ? this.horizontalGridRows : 6;
+      }
+
+      const override = this.getMonitorGridOverride(String(monitor.id));
+      if (override) {
+        gridColumns = override.columns;
+        gridRows = override.rows;
+      }
+    }
+
+    const minSpan = this.minSpan !== undefined ? this.minSpan : 2;
+    return {
+      gridSize: Math.max(gridColumns, gridRows),
+      gridColumns,
+      gridRows,
+      minSpan,
+      minColumnSpan: this.minColumnSpan !== undefined ? this.minColumnSpan : minSpan,
+      minRowSpan: this.minRowSpan !== undefined ? this.minRowSpan : minSpan,
+      step: this.step !== undefined ? this.step : 1,
+      gaps: this.gaps !== undefined ? this.gaps : 8
+    };
+  }
+
+  private getMonitorGridOverride(monitorId: string): { columns: number; rows: number } | null {
+    const raw = (this.monitorGridOverrides || '').trim();
+    if (!raw) return null;
+
+    const entries = raw.split(/[,\n;]/).map(part => part.trim()).filter(Boolean);
+    for (const entry of entries) {
+      const match = entry.match(/^([^:=\s]+)\s*[:=]\s*(\d+)\s*x\s*(\d+)$/i);
+      if (!match || match[1] !== monitorId) continue;
+
+      const columns = parseInt(match[2], 10);
+      const rows = parseInt(match[3], 10);
+      if (columns >= 2 && rows >= 2) {
+        return { columns, rows };
+      }
+    }
+
+    return null;
+  }
+
+  private debugLog(message: string): void {
+    if (this.enableDebugLogs === true) {
+      global.log(message);
+    }
+  }
+
   public enable(): void {
     try {
       this.settings = new Settings.ExtensionSettings(this, this.metadata.uuid, this.metadata.uuid);
@@ -80,13 +157,47 @@ class DynamicTilerExtension {
       this.settings.bindProperty(Settings.BindingDirection.IN, 'gridSize', 'gridSize', () => {
         this.applyConfigurationChange();
       });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'gridColumns', 'gridColumns', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'gridRows', 'gridRows', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'horizontalGridColumns', 'horizontalGridColumns', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'horizontalGridRows', 'horizontalGridRows', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'verticalGridColumns', 'verticalGridColumns', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'verticalGridRows', 'verticalGridRows', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'ultrawideGridColumns', 'ultrawideGridColumns', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'ultrawideGridRows', 'ultrawideGridRows', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'monitorGridOverrides', 'monitorGridOverrides', () => {
+        this.applyConfigurationChange();
+      });
       this.settings.bindProperty(Settings.BindingDirection.IN, 'minSpan', 'minSpan', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'minColumnSpan', 'minColumnSpan', () => {
+        this.applyConfigurationChange();
+      });
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'minRowSpan', 'minRowSpan', () => {
         this.applyConfigurationChange();
       });
       this.settings.bindProperty(Settings.BindingDirection.IN, 'step', 'step', () => {
         this.applyConfigurationChange();
       });
       this.settings.bindProperty(Settings.BindingDirection.IN, 'enablePreview', 'enablePreview', () => {});
+      this.settings.bindProperty(Settings.BindingDirection.IN, 'enableDebugLogs', 'enableDebugLogs', () => {});
       this.settings.bindProperty(Settings.BindingDirection.IN, 'enable-dnd-tiling', 'enable-dnd-tiling', () => {});
       this.settings.bindProperty(Settings.BindingDirection.IN, 'dnd-modifier-key', 'dnd-modifier-key', () => {});
       this.settings.bindProperty(Settings.BindingDirection.IN, 'dnd-swap-modifier-key', 'dnd-swap-modifier-key', () => {});
@@ -134,15 +245,15 @@ class DynamicTilerExtension {
       // Index all windows on startup
       try {
         const monitors = this.shell.getActiveMonitors();
-        const config = this.configProvider.getConfig();
         const activeMonitor = monitors[0];
+        const config = this.getConfigForMonitor(activeMonitor);
         this.indexAllWindows(activeMonitor, config, monitors, true);
-        global.log(`[Dynamic Tiler] Initial window indexing completed`);
+        this.debugLog(`[Dynamic Tiler] Initial window indexing completed`);
       } catch (err: any) {
         global.logError(`[Dynamic Tiler] Initial indexing error: ${err.message}`);
       }
       
-      global.log(`[Dynamic Tiler] Extension enabled and hooks registered successfully`);
+      this.debugLog(`[Dynamic Tiler] Extension enabled and hooks registered successfully`);
     } catch (e) {
       global.logError(`[Dynamic Tiler] Failed to enable extension: ${e}`);
     }
@@ -172,7 +283,7 @@ class DynamicTilerExtension {
       if (this.settings) {
         this.settings.finalize();
       }
-      global.log(`[Dynamic Tiler] Extension disabled successfully`);
+      this.debugLog(`[Dynamic Tiler] Extension disabled successfully`);
     } catch (e) {
       global.logError(`[Dynamic Tiler] Failed to disable extension: ${e}`);
     }
@@ -238,11 +349,11 @@ class DynamicTilerExtension {
         this.dragOffsetY = 0;
       }
 
-      global.log(`[Dynamic Tiler] Window drag started: ID ${this.draggedWindowId}, Op: ${op}, Offset: ${this.dragOffsetX}, ${this.dragOffsetY}, WasTiled: ${this.dragSession.wasTiled}`);
+      this.debugLog(`[Dynamic Tiler] Window drag started: ID ${this.draggedWindowId}, Op: ${op}, Offset: ${this.dragOffsetX}, ${this.dragOffsetY}, WasTiled: ${this.dragSession.wasTiled}`);
 
       // Auto-index all screen windows immediately on drag start to rebuild active grid states
       try {
-        const config = this.configProvider.getConfig();
+        const config = this.getConfigForMonitor(activeMonitor);
         this.indexAllWindows(activeMonitor, config, monitors);
       } catch (err: any) {
         global.logError(`[Dynamic Tiler] DnD Pre-indexing error: ${err.message}`);
@@ -290,8 +401,13 @@ class DynamicTilerExtension {
         };
 
         const currentMonitor = this.shell.findMonitorForWindow(currentVisible, monitors);
-        let hSpan: [number, number] = [0, config.gridSize];
-        let vSpan: [number, number] = [0, config.gridSize];
+        const currentConfig = this.getConfigForMonitor(currentMonitor);
+        const gridColumns = getGridColumns(currentConfig);
+        const gridRows = getGridRows(currentConfig);
+        const minColumnSpan = getMinColumnSpan(currentConfig);
+        const minRowSpan = getMinRowSpan(currentConfig);
+        let hSpan: [number, number] = [0, gridColumns];
+        let vSpan: [number, number] = [0, gridRows];
         let isResting = false;
 
         if (cached) {
@@ -300,9 +416,14 @@ class DynamicTilerExtension {
           const diffY = Math.abs(currentVisible.y - cached.tiledGeometry.y);
           const diffW = Math.abs(currentVisible.width - cached.tiledGeometry.width);
           const diffH = Math.abs(currentVisible.height - cached.tiledGeometry.height);
+          const cachedFitsGrid =
+            cached.state.hSpan[0] >= 0 &&
+            cached.state.hSpan[1] <= gridColumns &&
+            cached.state.vSpan[0] >= 0 &&
+            cached.state.vSpan[1] <= gridRows;
 
           const MATCH_THRESHOLD = 40;
-          if (diffX <= MATCH_THRESHOLD && diffY <= MATCH_THRESHOLD && diffW <= MATCH_THRESHOLD && diffH <= MATCH_THRESHOLD) {
+          if (cachedFitsGrid && diffX <= MATCH_THRESHOLD && diffY <= MATCH_THRESHOLD && diffW <= MATCH_THRESHOLD && diffH <= MATCH_THRESHOLD) {
             // Window is resting on its tiled position. Keep its perfect logical spans!
             hSpan = cached.state.hSpan;
             vSpan = cached.state.vSpan;
@@ -312,21 +433,21 @@ class DynamicTilerExtension {
 
         if (!isResting) {
           // Window is either new or has been manually moved by user. Re-calculate spans!
-          hSpan = TilingEngine.geometryToHSpan(currentVisible, currentMonitor, config);
-          vSpan = TilingEngine.geometryToVSpan(currentVisible, currentMonitor, config);
+          hSpan = TilingEngine.geometryToHSpan(currentVisible, currentMonitor, currentConfig);
+          vSpan = TilingEngine.geometryToVSpan(currentVisible, currentMonitor, currentConfig);
 
           // Clamping to support minimum sizing requirements
-          if (hSpan[1] - hSpan[0] < config.minSpan) {
+          if (hSpan[1] - hSpan[0] < minColumnSpan) {
             const center = Math.round((hSpan[0] + hSpan[1]) / 2);
-            hSpan[0] = Math.max(0, center - Math.floor(config.minSpan / 2));
-            hSpan[1] = Math.min(config.gridSize, hSpan[0] + config.minSpan);
-            hSpan[0] = Math.max(0, hSpan[1] - config.minSpan);
+            hSpan[0] = Math.max(0, center - Math.floor(minColumnSpan / 2));
+            hSpan[1] = Math.min(gridColumns, hSpan[0] + minColumnSpan);
+            hSpan[0] = Math.max(0, hSpan[1] - minColumnSpan);
           }
-          if (vSpan[1] - vSpan[0] < config.minSpan) {
+          if (vSpan[1] - vSpan[0] < minRowSpan) {
             const center = Math.round((vSpan[0] + vSpan[1]) / 2);
-            vSpan[0] = Math.max(0, center - Math.floor(config.minSpan / 2));
-            vSpan[1] = Math.min(config.gridSize, vSpan[0] + config.minSpan);
-            vSpan[0] = Math.max(0, vSpan[1] - config.minSpan);
+            vSpan[0] = Math.max(0, center - Math.floor(minRowSpan / 2));
+            vSpan[1] = Math.min(gridRows, vSpan[0] + minRowSpan);
+            vSpan[0] = Math.max(0, vSpan[1] - minRowSpan);
           }
         }
 
@@ -338,7 +459,7 @@ class DynamicTilerExtension {
             vSpan,
             lastDirection: null
           };
-          const snappedGeom = TilingEngine.stateToGeometry(candidateState, currentMonitor, config);
+          const snappedGeom = TilingEngine.stateToGeometry(candidateState, currentMonitor, currentConfig);
           const diffX = Math.abs(currentVisible.x - snappedGeom.x);
           const diffY = Math.abs(currentVisible.y - snappedGeom.y);
           const diffW = Math.abs(currentVisible.width - snappedGeom.width);
@@ -370,7 +491,7 @@ class DynamicTilerExtension {
           // Overlap detected! Strip this overlapping window from the tiling cache to make it float.
           if (cached) {
             this.cache.clearState(id);
-            global.log(`[Dynamic Tiler] Cache Sanitation: Stripped overlapping window ${id} from cache`);
+            this.debugLog(`[Dynamic Tiler] Cache Sanitation: Stripped overlapping window ${id} from cache`);
           }
           continue;
         }
@@ -397,7 +518,7 @@ class DynamicTilerExtension {
 
         const originalGeom = cached ? cached.originalGeometry : currentGeom;
         this.cache.saveState(id, restoredState, currentVisible, originalGeom);
-        global.log(`[Dynamic Tiler] Auto-indexed window ${id} to cell [${hSpan.join(',')}] x [${vSpan.join(',')}]`);
+        this.debugLog(`[Dynamic Tiler] Auto-indexed window ${id} to cell [${hSpan.join(',')}] x [${vSpan.join(',')}]`);
       } catch (e) {
         // Ignore failures for individual windows
       }
@@ -493,11 +614,15 @@ class DynamicTilerExtension {
         this.dragSession.targetMonitor = activeMonitor;
       }
 
-      const config = this.configProvider.getConfig();
+      const config = this.getConfigForMonitor(activeMonitor);
+      const gridColumns = getGridColumns(config);
+      const gridRows = getGridRows(config);
+      const minColumnSpan = getMinColumnSpan(config);
+      const minRowSpan = getMinRowSpan(config);
 
       // Determine the target sizes based on cache or physical size
-      let windowWidth = Math.round(config.gridSize / 2);
-      let windowHeight = config.gridSize;
+      let windowWidth = Math.round(gridColumns / 2);
+      let windowHeight = gridRows;
       let windowSizeSource = 'fallback';
 
       if (this.dragSession && this.dragSession.wasTiled && this.dragSession.sourceState) {
@@ -509,20 +634,20 @@ class DynamicTilerExtension {
           const geom = this.shell.getWindowGeometry(this.draggedWindowId);
           const hSpan = TilingEngine.geometryToHSpan(geom, activeMonitor, config);
           const vSpan = TilingEngine.geometryToVSpan(geom, activeMonitor, config);
-          windowWidth = Math.max(config.minSpan, hSpan[1] - hSpan[0]);
-          windowHeight = Math.max(config.minSpan, vSpan[1] - vSpan[0]);
+          windowWidth = Math.max(minColumnSpan, hSpan[1] - hSpan[0]);
+          windowHeight = Math.max(minRowSpan, vSpan[1] - vSpan[0]);
           windowSizeSource = 'current-geometry';
         } catch (e) {
           try {
             if (!this.dragSession || !this.dragSession.sourceGeometry) throw e;
             const hSpan = TilingEngine.geometryToHSpan(this.dragSession.sourceGeometry, activeMonitor, config);
             const vSpan = TilingEngine.geometryToVSpan(this.dragSession.sourceGeometry, activeMonitor, config);
-            windowWidth = Math.max(config.minSpan, hSpan[1] - hSpan[0]);
-            windowHeight = Math.max(config.minSpan, vSpan[1] - vSpan[0]);
+            windowWidth = Math.max(minColumnSpan, hSpan[1] - hSpan[0]);
+            windowHeight = Math.max(minRowSpan, vSpan[1] - vSpan[0]);
             windowSizeSource = 'source-geometry';
           } catch {
-            windowWidth = Math.round(config.gridSize / 2);
-            windowHeight = Math.round(config.gridSize / 2);
+            windowWidth = Math.round(gridColumns / 2);
+            windowHeight = Math.round(gridRows / 2);
             windowSizeSource = 'fallback';
           }
         }
@@ -595,7 +720,7 @@ class DynamicTilerExtension {
         const signature = `source-return:${this.draggedWindowId}:${sourceState.hSpan.join('-')}x${sourceState.vSpan.join('-')}:target=${dragTarget.targetHSpan.join('-')}x${dragTarget.targetVSpan.join('-')}:intent=${dragTarget.intentPoint.h.toFixed(2)},${dragTarget.intentPoint.v.toFixed(2)}`;
         if (signature !== this.lastDndDebugSignature) {
           this.lastDndDebugSignature = signature;
-          global.log(`[Dynamic Tiler] DnD source-return cancel dragged=${this.draggedWindowId} source=${sourceState.hSpan.join('-')}x${sourceState.vSpan.join('-')} target=${dragTarget.targetHSpan.join('-')}x${dragTarget.targetVSpan.join('-')} intent=${dragTarget.intentPoint.h.toFixed(2)},${dragTarget.intentPoint.v.toFixed(2)}`);
+          this.debugLog(`[Dynamic Tiler] DnD source-return cancel dragged=${this.draggedWindowId} source=${sourceState.hSpan.join('-')}x${sourceState.vSpan.join('-')} target=${dragTarget.targetHSpan.join('-')}x${dragTarget.targetVSpan.join('-')} intent=${dragTarget.intentPoint.h.toFixed(2)},${dragTarget.intentPoint.v.toFixed(2)}`);
         }
         this.clearBlockedPreview();
         this.clearPlacementPreviewsExcept(this.draggedWindowId);
@@ -800,19 +925,19 @@ class DynamicTilerExtension {
       return;
     }
 
-    global.log(`[Dynamic Tiler] Window drag ended. Active ID: ${this.draggedWindowId}`);
+    this.debugLog(`[Dynamic Tiler] Window drag ended. Active ID: ${this.draggedWindowId}`);
 
     const session = this.dragSession;
     this.clearPreviews();
 
     if (session && this.draggedWindowId) {
       const monitors = this.shell.getActiveMonitors();
-      const config = this.configProvider.getConfig();
       const activeMonitor = this.lastDragMonitor || session.sourceMonitor;
+      const config = this.getConfigForMonitor(activeMonitor);
 
       if (session.lastDragStates) {
         // SUCCESSFUL COMMIT: Apply the drag states
-        global.log(`[Dynamic Tiler] Committing DnD tiling session for ${Object.keys(session.lastDragStates).length} windows`);
+        this.debugLog(`[Dynamic Tiler] Committing DnD tiling session for ${Object.keys(session.lastDragStates).length} windows`);
 
         if (session.lastDragBeforeStates && session.lastDragAffected && session.lastDragAffected.length > 0) {
           const afterStates: Record<string, WindowState> = {};
@@ -838,8 +963,8 @@ class DynamicTilerExtension {
 
         // If cross-monitor move: collapse the vacancy on the source monitor first
         if (session.wasTiled && session.sourceMonitor && activeMonitor && session.sourceMonitor.id !== activeMonitor.id) {
-          global.log(`[Dynamic Tiler] Cross-monitor drag detected. Collapsing vacancy on source monitor ${session.sourceMonitor.id}`);
-          this.collapseAndApplyVacancy(this.draggedWindowId, session.sourceMonitor, config, monitors);
+          this.debugLog(`[Dynamic Tiler] Cross-monitor drag detected. Collapsing vacancy on source monitor ${session.sourceMonitor.id}`);
+          this.collapseAndApplyVacancy(this.draggedWindowId, session.sourceMonitor, this.getConfigForMonitor(session.sourceMonitor), monitors);
         }
 
         // Apply new geometries to all affected windows on target monitor
@@ -871,8 +996,8 @@ class DynamicTilerExtension {
           }
         }
       } else if (session.floated && session.wasTiled && session.sourceMonitor) {
-        global.log(`[Dynamic Tiler] DnD floated tiled window ${this.draggedWindowId}; collapsing source vacancy on monitor ${session.sourceMonitor.id}`);
-        this.collapseAndApplyVacancy(this.draggedWindowId, session.sourceMonitor, config, monitors);
+        this.debugLog(`[Dynamic Tiler] DnD floated tiled window ${this.draggedWindowId}; collapsing source vacancy on monitor ${session.sourceMonitor.id}`);
+        this.collapseAndApplyVacancy(this.draggedWindowId, session.sourceMonitor, this.getConfigForMonitor(session.sourceMonitor), monitors);
         this.cache.clearState(this.draggedWindowId);
       } else if (session.cancelled) {
         if (session.wasTiled && session.sourceTiledGeometry && session.sourceState) {
@@ -889,7 +1014,7 @@ class DynamicTilerExtension {
             global.logError(`[Dynamic Tiler] DnD cancel restore error for window ${this.draggedWindowId}: ${e.message}`);
           }
         }
-        global.log(`[Dynamic Tiler] DnD cancelled safely for window ${this.draggedWindowId}; layout cache left unchanged`);
+        this.debugLog(`[Dynamic Tiler] DnD cancelled safely for window ${this.draggedWindowId}; layout cache left unchanged`);
       }
     }
 
@@ -939,12 +1064,12 @@ class DynamicTilerExtension {
       if (restoredTransaction) {
         collapsedStates = restoredTransaction.states;
         this.dndTransactions.splice(restoredTransaction.snapshotIndex, 1);
-        global.log(`[Dynamic Tiler] Restored DnD transaction neighbors for ${draggedId}`);
+        this.debugLog(`[Dynamic Tiler] Restored DnD transaction neighbors for ${draggedId}`);
       } else if (this.dndTransactions.some(transaction =>
         transaction.draggedId === draggedId &&
         transaction.monitorId === String(monitor.id)
       )) {
-        global.log(`[Dynamic Tiler] DnD transaction restore skipped for ${draggedId}; falling back to vacancy collapse`);
+        this.debugLog(`[Dynamic Tiler] DnD transaction restore skipped for ${draggedId}; falling back to vacancy collapse`);
       }
 
       if (!collapsedStates) {
@@ -979,7 +1104,7 @@ class DynamicTilerExtension {
 
       // Remove the dragged window from the tiling engine cache (makes it a free floating window)
       this.cache.clearState(draggedId);
-      global.log(`[Dynamic Tiler] Successfully collapsed grid vacancy and cleared state for ${draggedId}`);
+      this.debugLog(`[Dynamic Tiler] Successfully collapsed grid vacancy and cleared state for ${draggedId}`);
     } catch (e: any) {
       global.logError(`[Dynamic Tiler] Failed to collapse and apply vacancy: ${e.message}`);
     }
@@ -1040,7 +1165,7 @@ class DynamicTilerExtension {
         const monitors = this.shell.getActiveMonitors();
         const geom = this.shell.getWindowGeometry(windowId);
         const activeMonitor = this.shell.findMonitorForWindow(geom, monitors);
-        const config = this.configProvider.getConfig();
+        const config = this.getConfigForMonitor(activeMonitor);
 
         // 1. Collapse the grid vacancy left by this window
         this.collapseAndApplyVacancy(windowId, activeMonitor, config, monitors);
@@ -1050,7 +1175,7 @@ class DynamicTilerExtension {
         this.shell.applyGeometry(windowId, cached.originalGeometry);
         this.cache.clearState(windowId);
 
-        global.log(`[Dynamic Tiler] Successfully restored and collapsed window ${windowId}`);
+        this.debugLog(`[Dynamic Tiler] Successfully restored and collapsed window ${windowId}`);
       }
     } catch (e: any) {
       global.logError(`[Dynamic Tiler] Failed to restore and collapse window: ${e.message}`);
@@ -1065,6 +1190,10 @@ class DynamicTilerExtension {
     windowSizeSource: string,
     activeWindows: { windowId: string; state: WindowState }[]
   ): void {
+    if (this.enableDebugLogs !== true) {
+      return;
+    }
+
     const debug = dragTarget.debug;
     const signature = [
       dragResult.status,
@@ -1095,7 +1224,7 @@ class DynamicTilerExtension {
       ? `${this.formatSpan(debug.verticalGroup.hSpan)} windows=${debug.verticalGroup.windows} contains=${debug.verticalGroup.containsCursor} dist=${debug.verticalGroup.hDistance.toFixed(2)}`
       : '-';
 
-    global.log(
+    this.debugLog(
       `[Dynamic Tiler] DnD trace status=${dragResult.status}` +
       ` reason=${dragResult.reason || 'ok'}` +
       ` dragged=${this.draggedWindowId}` +
@@ -1192,7 +1321,6 @@ class DynamicTilerExtension {
 
   private applyConfigurationChange(): void {
     try {
-      const config = this.configProvider.getConfig();
       const visibleWindowIds = this.shell.getVisibleWindowIds();
       const monitors = this.shell.getActiveMonitors();
 
@@ -1203,7 +1331,17 @@ class DynamicTilerExtension {
         try {
           const currentGeom = this.shell.getWindowGeometry(id);
           const monitor = this.shell.findMonitorForWindow(currentGeom, monitors);
-          const nextGeom = TilingEngine.stateToGeometry(cached.state, monitor, config);
+          const config = this.getConfigForMonitor(monitor);
+          const hSpan = TilingEngine.geometryToHSpan(currentGeom, monitor, config);
+          const vSpan = TilingEngine.geometryToVSpan(currentGeom, monitor, config);
+          const nextState: WindowState = {
+            ...cached.state,
+            hSpan,
+            vSpan,
+            hIndex: TilingEngine.spanToHIndex(hSpan),
+            vIndex: TilingEngine.spanToVIndex(vSpan)
+          };
+          const nextGeom = TilingEngine.stateToGeometry(nextState, monitor, config);
           
           const win = (this.shell as any)._findMetaWindow(id);
           if (win) {
@@ -1211,7 +1349,7 @@ class DynamicTilerExtension {
               win.unmaximize(Meta.MaximizeFlags.BOTH);
             }
             win.move_resize_frame(true, nextGeom.x, nextGeom.y, nextGeom.width, nextGeom.height);
-            this.cache.saveState(id, cached.state, nextGeom, cached.originalGeometry);
+            this.cache.saveState(id, nextState, nextGeom, cached.originalGeometry);
           }
         } catch (e) {
           // Ignore failures for individual windows

@@ -1,4 +1,4 @@
-import { Config } from '../types';
+import { Config, getGridColumns, getGridRows, getMinColumnSpan, getMinRowSpan } from '../types';
 
 export class ChainBlockDetector {
   /**
@@ -31,7 +31,7 @@ export class ChainBlockDetector {
     if (chainLength === 0) return false;
 
     const freeSpace = currentStart;
-    const minChainWidth = chainLength * config.minSpan;
+    const minChainWidth = chainLength * getMinColumnSpan(config);
     const compressionReserve = currentChainWidth - minChainWidth;
     const movementReserve = freeSpace + compressionReserve;
 
@@ -67,8 +67,8 @@ export class ChainBlockDetector {
 
     if (chainLength === 0) return false;
 
-    const freeSpace = config.gridSize - currentEnd;
-    const minChainWidth = chainLength * config.minSpan;
+    const freeSpace = getGridColumns(config) - currentEnd;
+    const minChainWidth = chainLength * getMinColumnSpan(config);
     const compressionReserve = currentChainWidth - minChainWidth;
     const movementReserve = freeSpace + compressionReserve;
 
@@ -105,7 +105,7 @@ export class ChainBlockDetector {
     if (chainLength === 0) return false;
 
     const freeSpace = currentStart;
-    const minChainHeight = chainLength * config.minSpan;
+    const minChainHeight = chainLength * getMinRowSpan(config);
     const compressionReserve = currentChainHeight - minChainHeight;
     const movementReserve = freeSpace + compressionReserve;
 
@@ -141,8 +141,8 @@ export class ChainBlockDetector {
 
     if (chainLength === 0) return false;
 
-    const freeSpace = config.gridSize - currentEnd;
-    const minChainHeight = chainLength * config.minSpan;
+    const freeSpace = getGridRows(config) - currentEnd;
+    const minChainHeight = chainLength * getMinRowSpan(config);
     const compressionReserve = currentChainHeight - minChainHeight;
     const movementReserve = freeSpace + compressionReserve;
 

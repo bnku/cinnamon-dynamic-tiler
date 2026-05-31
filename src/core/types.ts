@@ -39,7 +39,27 @@ export interface CachedWindowState {
 
 export interface Config {
   gridSize: number;
+  gridColumns?: number;
+  gridRows?: number;
   minSpan: number;
+  minColumnSpan?: number;
+  minRowSpan?: number;
   step: number;
   gaps: number;
+}
+
+export function getGridColumns(config: Config): number {
+  return config.gridColumns || config.gridSize;
+}
+
+export function getGridRows(config: Config): number {
+  return config.gridRows || config.gridSize;
+}
+
+export function getMinColumnSpan(config: Config): number {
+  return config.minColumnSpan || config.minSpan;
+}
+
+export function getMinRowSpan(config: Config): number {
+  return config.minRowSpan || config.minSpan;
 }

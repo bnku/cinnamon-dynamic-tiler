@@ -39,7 +39,11 @@ const path = __importStar(require("path"));
 const os = __importStar(require("os"));
 exports.DEFAULT_CONFIG = {
     gridSize: 12,
+    gridColumns: 12,
+    gridRows: 6,
     minSpan: 2,
+    minColumnSpan: 2,
+    minRowSpan: 2,
     step: 2,
     gaps: 0,
 };
@@ -68,9 +72,21 @@ class JsonFileConfigProvider {
                 gridSize: typeof parsed.gridSize === 'number' && parsed.gridSize > 0
                     ? parsed.gridSize
                     : exports.DEFAULT_CONFIG.gridSize,
+                gridColumns: typeof parsed.gridColumns === 'number' && parsed.gridColumns > 0
+                    ? parsed.gridColumns
+                    : (typeof parsed.gridSize === 'number' && parsed.gridSize > 0 ? parsed.gridSize : exports.DEFAULT_CONFIG.gridColumns),
+                gridRows: typeof parsed.gridRows === 'number' && parsed.gridRows > 0
+                    ? parsed.gridRows
+                    : (typeof parsed.gridSize === 'number' && parsed.gridSize > 0 ? parsed.gridSize : exports.DEFAULT_CONFIG.gridRows),
                 minSpan: typeof parsed.minSpan === 'number' && parsed.minSpan > 0
                     ? parsed.minSpan
                     : exports.DEFAULT_CONFIG.minSpan,
+                minColumnSpan: typeof parsed.minColumnSpan === 'number' && parsed.minColumnSpan > 0
+                    ? parsed.minColumnSpan
+                    : (typeof parsed.minSpan === 'number' && parsed.minSpan > 0 ? parsed.minSpan : exports.DEFAULT_CONFIG.minColumnSpan),
+                minRowSpan: typeof parsed.minRowSpan === 'number' && parsed.minRowSpan > 0
+                    ? parsed.minRowSpan
+                    : (typeof parsed.minSpan === 'number' && parsed.minSpan > 0 ? parsed.minSpan : exports.DEFAULT_CONFIG.minRowSpan),
                 step: typeof parsed.step === 'number' && parsed.step > 0
                     ? parsed.step
                     : exports.DEFAULT_CONFIG.step,

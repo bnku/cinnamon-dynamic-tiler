@@ -13,6 +13,8 @@ export declare class CinnamonConfigProvider implements IConfigProvider {
     private ext;
     constructor(ext: any);
     getConfig(): Config;
+    getConfigForMonitor(monitor: ScreenInfo): Config;
+    private buildConfig;
 }
 export declare class CinnamonShellAdapter implements IShellAdapter {
     private ext;

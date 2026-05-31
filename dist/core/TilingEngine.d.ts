@@ -1,4 +1,4 @@
-import { Geometry, ScreenInfo, Direction, WindowState, Config } from './types';
+import { Config, Direction, Geometry, ScreenInfo, WindowState } from './types';
 import { HORIZONTAL_SPANS, VERTICAL_SPANS } from './engine/GridSpans';
 export { HORIZONTAL_SPANS, VERTICAL_SPANS };
 export declare class TilingEngine {

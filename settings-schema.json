@@ -1,21 +1,63 @@
 {
   "layout1": {
     "type": "layout",
-    "pages": ["page1"],
-    "page1": {
+    "pages": ["page_layout", "page_dnd", "page_keyboard", "page_diagnostics"],
+    "page_layout": {
       "type": "page",
-      "title": "Settings",
-      "sections": ["section_tiling", "section_dnd", "section_keybindings"]
+      "title": "Layout",
+      "sections": ["section_spacing", "section_default_grid", "section_monitor_profiles", "section_monitor_overrides"]
     },
-    "section_tiling": {
+    "page_dnd": {
+      "type": "page",
+      "title": "Drag & Drop",
+      "sections": ["section_dnd", "section_swap"]
+    },
+    "page_keyboard": {
+      "type": "page",
+      "title": "Keyboard",
+      "sections": ["section_keybindings"]
+    },
+    "page_diagnostics": {
+      "type": "page",
+      "title": "Diagnostics",
+      "sections": ["section_diagnostics"]
+    },
+    "section_spacing": {
       "type": "section",
-      "title": "Tiling & Animations",
-      "keys": ["gaps", "gridSize", "minSpan", "step", "enablePreview"]
+      "title": "Spacing & Preview",
+      "keys": ["gaps", "enablePreview"]
+    },
+    "section_default_grid": {
+      "type": "section",
+      "title": "Default Grid",
+      "keys": ["gridColumns", "gridRows", "minColumnSpan", "minRowSpan", "step"]
+    },
+    "section_monitor_profiles": {
+      "type": "section",
+      "title": "Monitor Profiles",
+      "keys": [
+        "horizontalGridColumns",
+        "horizontalGridRows",
+        "verticalGridColumns",
+        "verticalGridRows",
+        "ultrawideGridColumns",
+        "ultrawideGridRows"
+      ]
+    },
+    "section_monitor_overrides": {
+      "type": "section",
+      "title": "Per-Monitor Overrides",
+      "keys": ["monitorGridOverrides"]
     },
     "section_dnd": {
       "type": "section",
       "title": "Drag-and-Drop Snapping",
-      "keys": ["enable-dnd-tiling", "dnd-modifier-key", "experimentalSwapSameShapeWindows", "dnd-swap-modifier-key"]
+      "keys": ["enable-dnd-tiling", "dnd-modifier-key"]
+    },
+    "section_swap": {
+      "type": "section",
+      "title": "Window Swap",
+      "keys": ["experimentalSwapSameShapeWindows", "dnd-swap-modifier-key"]
     },
     "section_keybindings": {
       "type": "section",
@@ -31,6 +73,11 @@
         "keybinding-shift-down",
         "keybinding-restore"
       ]
+    },
+    "section_diagnostics": {
+      "type": "section",
+      "title": "Debugging",
+      "keys": ["enableDebugLogs"]
     }
   },
   "gaps": {
@@ -48,7 +95,76 @@
     "min": 4,
     "max": 24,
     "step": 2,
-    "description": "Grid size (number of columns)"
+    "description": "Legacy square grid size"
+  },
+  "gridColumns": {
+    "type": "spinbutton",
+    "default": 12,
+    "min": 4,
+    "max": 32,
+    "step": 1,
+    "description": "Default grid columns"
+  },
+  "gridRows": {
+    "type": "spinbutton",
+    "default": 6,
+    "min": 4,
+    "max": 32,
+    "step": 1,
+    "description": "Default grid rows"
+  },
+  "horizontalGridColumns": {
+    "type": "spinbutton",
+    "default": 6,
+    "min": 4,
+    "max": 32,
+    "step": 1,
+    "description": "Columns for regular horizontal monitors"
+  },
+  "horizontalGridRows": {
+    "type": "spinbutton",
+    "default": 6,
+    "min": 4,
+    "max": 32,
+    "step": 1,
+    "description": "Rows for regular horizontal monitors"
+  },
+  "verticalGridColumns": {
+    "type": "spinbutton",
+    "default": 6,
+    "min": 4,
+    "max": 32,
+    "step": 1,
+    "description": "Columns for vertical monitors"
+  },
+  "verticalGridRows": {
+    "type": "spinbutton",
+    "default": 12,
+    "min": 4,
+    "max": 32,
+    "step": 1,
+    "description": "Rows for vertical monitors"
+  },
+  "ultrawideGridColumns": {
+    "type": "spinbutton",
+    "default": 12,
+    "min": 4,
+    "max": 48,
+    "step": 1,
+    "description": "Columns for ultrawide monitors"
+  },
+  "ultrawideGridRows": {
+    "type": "spinbutton",
+    "default": 6,
+    "min": 4,
+    "max": 32,
+    "step": 1,
+    "description": "Rows for ultrawide monitors"
+  },
+  "monitorGridOverrides": {
+    "type": "entry",
+    "default": "",
+    "description": "Optional monitor overrides, for example: 0:24x12, 1:6x12"
   },
   "minSpan": {
     "type": "spinbutton",
@@ -56,7 +172,23 @@
     "min": 1,
     "max": 6,
     "step": 1,
-    "description": "Minimum window span"
+    "description": "Legacy minimum window span"
+  },
+  "minColumnSpan": {
+    "type": "spinbutton",
+    "default": 2,
+    "min": 1,
+    "max": 8,
+    "step": 1,
+    "description": "Minimum window width in columns"
+  },
+  "minRowSpan": {
+    "type": "spinbutton",
+    "default": 2,
+    "min": 1,
+    "max": 8,
+    "step": 1,
+    "description": "Minimum window height in rows"
   },
   "step": {
     "type": "spinbutton",
@@ -69,27 +201,32 @@
   "enablePreview": {
     "type": "switch",
     "default": true,
-    "description": "Enable semi-transparent tile preview animation (ghost frame)"
+    "description": "Enable tile preview animation"
+  },
+  "enableDebugLogs": {
+    "type": "switch",
+    "default": false,
+    "description": "Write detailed Dynamic Tiler debug logs to ~/.xsession-errors"
   },
   "enable-dnd-tiling": {
     "type": "switch",
     "default": true,
-    "description": "Enable Drag-and-Drop window tiling"
+    "description": "Enable drag-and-drop window tiling"
   },
   "dnd-modifier-key": {
     "type": "keybinding",
     "default": "<Shift>d",
-    "description": "Hold modifiers of this key during drag to snap windows (Default: Shift)"
+    "description": "Hold these modifiers while dragging to snap windows"
   },
   "experimentalSwapSameShapeWindows": {
     "type": "switch",
-    "default": false,
-    "description": "Experimental: enable modifier-driven window swap while dragging"
+    "default": true,
+    "description": "Enable modifier-driven window swap while dragging"
   },
   "dnd-swap-modifier-key": {
     "type": "keybinding",
     "default": "<Control><Shift>d",
-    "description": "Hold modifiers of this key during drag to swap with the tiled window under cursor"
+    "description": "Hold these modifiers while dragging to swap windows"
   },
   "keybinding-tile-left": {
     "type": "keybinding",

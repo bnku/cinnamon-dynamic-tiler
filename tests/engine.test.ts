@@ -1,6 +1,6 @@
 import { TilingEngine } from '../src/core/TilingEngine';
 import { calculateDragTransitions, collapseVacancy, computeDragTarget, hasLayoutOverlaps, restoreDragTransaction, restoreDragTransactionHistory, shouldCancelSourceReturn, shouldFloatAfterModifierRelease, solveDragTransitions } from '../src/DragTiling';
-import { ScreenInfo, WindowState, Config } from '../src/core/types';
+import { ScreenInfo, WindowState, Config, getGridColumns, getGridRows, getMinColumnSpan, getMinRowSpan } from '../src/core/types';
 
 describe('TilingEngine - 12-Column Layout Calculations', () => {
   const fakeScreen: ScreenInfo = {
@@ -39,10 +39,10 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     for (const state of Object.values(states)) {
       expect(state.hSpan[0]).toBeGreaterThanOrEqual(0);
       expect(state.vSpan[0]).toBeGreaterThanOrEqual(0);
-      expect(state.hSpan[1]).toBeLessThanOrEqual(config.gridSize);
-      expect(state.vSpan[1]).toBeLessThanOrEqual(config.gridSize);
-      expect(state.hSpan[1] - state.hSpan[0]).toBeGreaterThanOrEqual(config.minSpan);
-      expect(state.vSpan[1] - state.vSpan[0]).toBeGreaterThanOrEqual(config.minSpan);
+      expect(state.hSpan[1]).toBeLessThanOrEqual(getGridColumns(config));
+      expect(state.vSpan[1]).toBeLessThanOrEqual(getGridRows(config));
+      expect(state.hSpan[1] - state.hSpan[0]).toBeGreaterThanOrEqual(getMinColumnSpan(config));
+      expect(state.vSpan[1] - state.vSpan[0]).toBeGreaterThanOrEqual(getMinRowSpan(config));
     }
   };
 
@@ -603,6 +603,29 @@ describe('TilingEngine - 12-Column Layout Calculations', () => {
     // 3. Дальнейшее сжатие должно упереться в minSpan: 4
     const state3 = TilingEngine.calculateNextState(state2, 'left', customConfig);
     expect(state3.hSpan).toEqual([0, 4]);
+  });
+
+  test('should support asymmetric monitor grids with different column and row counts', () => {
+    const verticalMonitorConfig: Config = {
+      gridSize: 12,
+      gridColumns: 6,
+      gridRows: 12,
+      minSpan: 2,
+      minColumnSpan: 1,
+      minRowSpan: 2,
+      step: 1,
+      gaps: 0,
+    };
+
+    const state = TilingEngine.calculateNextState(TilingEngine.getDefaultState(), 'shift-right', verticalMonitorConfig);
+    expect(state.hSpan).toEqual([3, 6]);
+    expect(state.vSpan).toEqual([0, 12]);
+
+    const geom = TilingEngine.stateToGeometry(state, fakeScreen, verticalMonitorConfig);
+    expect(geom.x).toBe(960);
+    expect(geom.width).toBe(960);
+    expect(TilingEngine.geometryToHSpan(geom, fakeScreen, verticalMonitorConfig)).toEqual([3, 6]);
+    expect(TilingEngine.geometryToVSpan(geom, fakeScreen, verticalMonitorConfig)).toEqual([0, 12]);
   });
 
   test('should support dynamic corner mode resize without jump when both dimensions are compressed', () => {

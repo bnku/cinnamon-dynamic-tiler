@@ -39,9 +39,25 @@ export class CinnamonConfigProvider implements IConfigProvider {
   constructor(private ext: any) {}
 
   public getConfig(): Config {
+    return this.ext.getConfigForMonitor
+      ? this.ext.getConfigForMonitor(null)
+      : this.buildConfig();
+  }
+
+  public getConfigForMonitor(monitor: ScreenInfo): Config {
+    return this.ext.getConfigForMonitor
+      ? this.ext.getConfigForMonitor(monitor)
+      : this.buildConfig();
+  }
+
+  private buildConfig(): Config {
     return {
       gridSize: this.ext.gridSize !== undefined ? this.ext.gridSize : 12,
+      gridColumns: this.ext.gridColumns !== undefined ? this.ext.gridColumns : (this.ext.gridSize !== undefined ? this.ext.gridSize : 12),
+      gridRows: this.ext.gridRows !== undefined ? this.ext.gridRows : 6,
       minSpan: this.ext.minSpan !== undefined ? this.ext.minSpan : 2,
+      minColumnSpan: this.ext.minColumnSpan !== undefined ? this.ext.minColumnSpan : (this.ext.minSpan !== undefined ? this.ext.minSpan : 2),
+      minRowSpan: this.ext.minRowSpan !== undefined ? this.ext.minRowSpan : (this.ext.minSpan !== undefined ? this.ext.minSpan : 2),
       step: this.ext.step !== undefined ? this.ext.step : 1,
       gaps: this.ext.gaps !== undefined ? this.ext.gaps : 8
     };

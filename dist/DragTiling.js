@@ -9,6 +9,7 @@ exports.restoreDragTransactionHistory = restoreDragTransactionHistory;
 exports.computeDragTarget = computeDragTarget;
 exports.calculateDragTransitions = calculateDragTransitions;
 exports.collapseVacancy = collapseVacancy;
+const types_1 = require("./core/types");
 const TilingEngine_1 = require("./core/TilingEngine");
 function hasSpanOverlap(spanA, spanB) {
     return Math.max(spanA[0], spanB[0]) < Math.min(spanA[1], spanB[1]);
@@ -58,17 +59,21 @@ function solveDragTransitions(draggedId, targetHSpan, targetVSpan, config, activ
     };
 }
 function getDragBlockReason(states, config) {
+    const gridColumns = (0, types_1.getGridColumns)(config);
+    const gridRows = (0, types_1.getGridRows)(config);
+    const minColumnSpan = (0, types_1.getMinColumnSpan)(config);
+    const minRowSpan = (0, types_1.getMinRowSpan)(config);
     for (const state of Object.values(states)) {
         if (state.hSpan[0] < 0 ||
             state.vSpan[0] < 0 ||
-            state.hSpan[1] > config.gridSize ||
-            state.vSpan[1] > config.gridSize ||
+            state.hSpan[1] > gridColumns ||
+            state.vSpan[1] > gridRows ||
             state.hSpan[0] >= state.hSpan[1] ||
             state.vSpan[0] >= state.vSpan[1]) {
             return 'outOfBounds';
         }
-        if (state.hSpan[1] - state.hSpan[0] < config.minSpan ||
-            state.vSpan[1] - state.vSpan[0] < config.minSpan) {
+        if (state.hSpan[1] - state.hSpan[0] < minColumnSpan ||
+            state.vSpan[1] - state.vSpan[0] < minRowSpan) {
             return 'tooSmall';
         }
     }
@@ -196,36 +201,40 @@ function scoreDragLayoutCandidate(states, config, activeWindows, draggedId, orde
 function computeDragTarget(input) {
     const { draggedId, mx, my, monitor, config, activeWindows } = input;
     const { workarea } = monitor;
-    const colWidth = workarea.width / config.gridSize;
-    const rowHeight = workarea.height / config.gridSize;
+    const gridColumns = (0, types_1.getGridColumns)(config);
+    const gridRows = (0, types_1.getGridRows)(config);
+    const minColumnSpan = (0, types_1.getMinColumnSpan)(config);
+    const minRowSpan = (0, types_1.getMinRowSpan)(config);
+    const colWidth = workarea.width / gridColumns;
+    const rowHeight = workarea.height / gridRows;
     const intentPoint = {
         h: (mx - workarea.x) / colWidth,
         v: (my - workarea.y) / rowHeight
     };
-    const targetWidth = Math.max(config.minSpan, Math.min(config.gridSize, input.preferredWidth));
+    const targetWidth = Math.max(minColumnSpan, Math.min(gridColumns, input.preferredWidth));
     let startCol = Math.round(intentPoint.h - targetWidth / 2);
-    if (startCol + targetWidth > config.gridSize) {
-        startCol = config.gridSize - targetWidth;
+    if (startCol + targetWidth > gridColumns) {
+        startCol = gridColumns - targetWidth;
     }
     if (startCol < 0)
         startCol = 0;
     let targetHSpan = [startCol, startCol + targetWidth];
     const initialHSpan = [...targetHSpan];
     const ratioY = (my - workarea.y) / workarea.height;
-    const midGrid = Math.round(config.gridSize / 2);
+    const midRows = Math.round(gridRows / 2);
     let targetVSpan;
     const previousVSpan = input.previousTarget?.targetVSpan;
-    const shouldKeepTopHalf = spansEqual(previousVSpan, [0, midGrid]) && ratioY < 0.32;
-    const shouldKeepBottomHalf = spansEqual(previousVSpan, [midGrid, config.gridSize]) && ratioY > 0.68;
-    const shouldKeepFullHeight = spansEqual(previousVSpan, [0, config.gridSize]) && ratioY >= 0.24 && ratioY <= 0.76;
+    const shouldKeepTopHalf = spansEqual(previousVSpan, [0, midRows]) && ratioY < 0.32;
+    const shouldKeepBottomHalf = spansEqual(previousVSpan, [midRows, gridRows]) && ratioY > 0.68;
+    const shouldKeepFullHeight = spansEqual(previousVSpan, [0, gridRows]) && ratioY >= 0.24 && ratioY <= 0.76;
     if (shouldKeepTopHalf || (!shouldKeepBottomHalf && !shouldKeepFullHeight && ratioY < 0.28)) {
-        targetVSpan = [0, midGrid];
+        targetVSpan = [0, midRows];
     }
     else if (shouldKeepBottomHalf || (!shouldKeepTopHalf && !shouldKeepFullHeight && ratioY > 0.72)) {
-        targetVSpan = [midGrid, config.gridSize];
+        targetVSpan = [midRows, gridRows];
     }
     else {
-        targetVSpan = [0, config.gridSize];
+        targetVSpan = [0, gridRows];
     }
     const initialVSpan = [...targetVSpan];
     const allStackWindowCandidates = activeWindows
@@ -277,22 +286,22 @@ function computeDragTarget(input) {
         if (!cursorVerticalGroup)
             return false;
         const cursorRow = intentPoint.v;
-        const boundaries = [0, config.gridSize];
+        const boundaries = [0, gridRows];
         for (const w of cursorVerticalGroup.windows) {
             boundaries.push(w.state.vSpan[0], w.state.vSpan[1]);
         }
         const uniqueBoundaries = Array.from(new Set(boundaries))
-            .filter(v => v >= 0 && v <= config.gridSize)
+            .filter(v => v >= 0 && v <= gridRows)
             .sort((a, b) => a - b);
         let nearestDistance = Infinity;
         for (const boundary of uniqueBoundaries) {
             nearestDistance = Math.min(nearestDistance, Math.abs(cursorRow - boundary));
         }
-        const stackTargetHeight = Math.max(config.minSpan, (cursorVerticalGroup.windows.length + 1) * config.minSpan <= config.gridSize
-            ? Math.round(config.gridSize / (cursorVerticalGroup.windows.length + 1))
-            : config.minSpan);
-        const canFitStackVertically = (cursorVerticalGroup.windows.length + 1) * config.minSpan <= config.gridSize;
-        const canUseHorizontalRelief = cursorVerticalGroup.width < config.gridSize;
+        const stackTargetHeight = Math.max(minRowSpan, (cursorVerticalGroup.windows.length + 1) * minRowSpan <= gridRows
+            ? Math.round(gridRows / (cursorVerticalGroup.windows.length + 1))
+            : minRowSpan);
+        const canFitStackVertically = (cursorVerticalGroup.windows.length + 1) * minRowSpan <= gridRows;
+        const canUseHorizontalRelief = cursorVerticalGroup.width < gridColumns;
         return nearestDistance <= Math.max(1, stackTargetHeight / 2) &&
             (canFitStackVertically || canUseHorizontalRelief);
     })();
@@ -311,19 +320,19 @@ function computeDragTarget(input) {
         }
     }
     const nearHorizontalScreenEdge = intentPoint.h <= 0.65 ||
-        intentPoint.h >= config.gridSize - 0.65;
+        intentPoint.h >= gridColumns - 0.65;
     const targetOverlapsLeftEdgeWindow = allStackWindowCandidates.some(w => w.state.hSpan[0] <= 0 &&
-        w.state.hSpan[1] - w.state.hSpan[0] <= config.minSpan &&
+        w.state.hSpan[1] - w.state.hSpan[0] <= minColumnSpan &&
         targetHSpan[0] <= w.state.hSpan[1] + 1 &&
         hasSpanOverlap(targetVSpan, w.state.vSpan) &&
         intentPoint.h <= w.state.hSpan[1] + 1);
-    const targetOverlapsRightEdgeWindow = allStackWindowCandidates.some(w => w.state.hSpan[1] >= config.gridSize &&
-        w.state.hSpan[1] - w.state.hSpan[0] <= config.minSpan &&
+    const targetOverlapsRightEdgeWindow = allStackWindowCandidates.some(w => w.state.hSpan[1] >= gridColumns &&
+        w.state.hSpan[1] - w.state.hSpan[0] <= minColumnSpan &&
         targetHSpan[1] >= w.state.hSpan[0] - 1 &&
         hasSpanOverlap(targetVSpan, w.state.vSpan) &&
         intentPoint.h >= w.state.hSpan[0] - 1);
     const targetTouchesHorizontalScreenEdge = targetHSpan[0] <= 0 ||
-        targetHSpan[1] >= config.gridSize ||
+        targetHSpan[1] >= gridColumns ||
         targetOverlapsLeftEdgeWindow ||
         targetOverlapsRightEdgeWindow;
     const horizontalGroupCandidates = Array.from(horizontalGroups.values())
@@ -377,12 +386,12 @@ function computeDragTarget(input) {
     };
     if (cursorHorizontalGroup && !shouldPreferVerticalStack) {
         const cursorCol = intentPoint.h;
-        const boundaries = [0, config.gridSize];
+        const boundaries = [0, gridColumns];
         for (const w of cursorHorizontalGroup.windows) {
             boundaries.push(w.state.hSpan[0], w.state.hSpan[1]);
         }
         const uniqueBoundaries = Array.from(new Set(boundaries))
-            .filter(h => h >= 0 && h <= config.gridSize)
+            .filter(h => h >= 0 && h <= gridColumns)
             .sort((a, b) => a - b);
         let nearestBoundary = uniqueBoundaries[0];
         let nearestDistance = Math.abs(cursorCol - nearestBoundary);
@@ -390,9 +399,9 @@ function computeDragTarget(input) {
             nearestBoundary = 0;
             nearestDistance = Math.abs(cursorCol);
         }
-        else if (targetHSpan[1] >= config.gridSize || targetOverlapsRightEdgeWindow) {
-            nearestBoundary = config.gridSize;
-            nearestDistance = Math.abs(cursorCol - config.gridSize);
+        else if (targetHSpan[1] >= gridColumns || targetOverlapsRightEdgeWindow) {
+            nearestBoundary = gridColumns;
+            nearestDistance = Math.abs(cursorCol - gridColumns);
         }
         else {
             for (const boundary of uniqueBoundaries) {
@@ -422,28 +431,28 @@ function computeDragTarget(input) {
             Math.abs(w.state.hSpan[1] - nearestBoundary) <= 1);
         const adjacentWidths = adjacentWindows
             .map(w => w.state.hSpan[1] - w.state.hSpan[0])
-            .filter(width => width >= config.minSpan);
-        const requestedSlotWidth = Math.min(targetWidth, adjacentWidths.length > 0 ? Math.max(config.minSpan, Math.min(...adjacentWidths)) : targetWidth);
-        const isScreenEdgeBoundary = nearestBoundary <= 0 || nearestBoundary >= config.gridSize;
+            .filter(width => width >= minColumnSpan);
+        const requestedSlotWidth = Math.min(targetWidth, adjacentWidths.length > 0 ? Math.max(minColumnSpan, Math.min(...adjacentWidths)) : targetWidth);
+        const isScreenEdgeBoundary = nearestBoundary <= 0 || nearestBoundary >= gridColumns;
         let slotWidth = requestedSlotWidth;
         if (!isScreenEdgeBoundary) {
             const canCarveSlot = (width) => {
                 let start = Math.round(nearestBoundary - width / 2);
                 if (start < 0)
                     start = 0;
-                if (start + width > config.gridSize) {
-                    start = config.gridSize - width;
+                if (start + width > gridColumns) {
+                    start = gridColumns - width;
                 }
                 const candidateHSpan = [start, start + width];
                 for (const w of adjacentWindows) {
                     const overlap = Math.max(0, Math.min(candidateHSpan[1], w.state.hSpan[1]) - Math.max(candidateHSpan[0], w.state.hSpan[0]));
-                    if (overlap > 0 && (w.state.hSpan[1] - w.state.hSpan[0] - overlap) < config.minSpan) {
+                    if (overlap > 0 && (w.state.hSpan[1] - w.state.hSpan[0] - overlap) < minColumnSpan) {
                         return false;
                     }
                 }
                 return true;
             };
-            for (let width = requestedSlotWidth; width >= config.minSpan; width--) {
+            for (let width = requestedSlotWidth; width >= minColumnSpan; width--) {
                 if (canCarveSlot(width)) {
                     slotWidth = width;
                     break;
@@ -454,13 +463,13 @@ function computeDragTarget(input) {
             targetWidth > slotWidth &&
             ((nearestBoundary <= 0 && targetHSpan[0] <= 0) ||
                 (nearestBoundary <= 0 && targetOverlapsLeftEdgeWindow) ||
-                (nearestBoundary >= config.gridSize && targetHSpan[1] >= config.gridSize) ||
-                (nearestBoundary >= config.gridSize && targetOverlapsRightEdgeWindow));
+                (nearestBoundary >= gridColumns && targetHSpan[1] >= gridColumns) ||
+                (nearestBoundary >= gridColumns && targetOverlapsRightEdgeWindow));
         const isMinimumEdgeNeighborInsertion = isScreenEdgeBoundary &&
             (targetOverlapsLeftEdgeWindow || targetOverlapsRightEdgeWindow);
         const horizontalThreshold = isScreenEdgeBoundary
             ? (isWideTargetClampedToEdge || isMinimumEdgeNeighborInsertion
-                ? Math.max(0.65, targetWidth / 2 + slotWidth / 2, config.minSpan + 1)
+                ? Math.max(0.65, targetWidth / 2 + slotWidth / 2, minColumnSpan + 1)
                 : Math.min(0.65, Math.max(0.35, slotWidth / 3)))
             : Math.max(1, requestedSlotWidth / 2);
         debug.nearestBoundary = nearestBoundary;
@@ -472,15 +481,15 @@ function computeDragTarget(input) {
             if (nearestBoundary <= 0) {
                 targetHSpan = [0, slotWidth];
             }
-            else if (nearestBoundary >= config.gridSize) {
-                targetHSpan = [config.gridSize - slotWidth, config.gridSize];
+            else if (nearestBoundary >= gridColumns) {
+                targetHSpan = [gridColumns - slotWidth, gridColumns];
             }
             else {
                 let boundaryStartCol = Math.round(nearestBoundary - slotWidth / 2);
                 if (boundaryStartCol < 0)
                     boundaryStartCol = 0;
-                if (boundaryStartCol + slotWidth > config.gridSize) {
-                    boundaryStartCol = config.gridSize - slotWidth;
+                if (boundaryStartCol + slotWidth > gridColumns) {
+                    boundaryStartCol = gridColumns - slotWidth;
                 }
                 targetHSpan = [boundaryStartCol, boundaryStartCol + slotWidth];
             }
@@ -502,12 +511,12 @@ function computeDragTarget(input) {
             : overlapBasedStackWindows;
         if (columnStackWindows.length > 0) {
             const cursorRow = intentPoint.v;
-            const boundaries = [0, config.gridSize];
+            const boundaries = [0, gridRows];
             for (const w of columnStackWindows) {
                 boundaries.push(w.state.vSpan[0], w.state.vSpan[1]);
             }
             const uniqueBoundaries = Array.from(new Set(boundaries))
-                .filter(v => v >= 0 && v <= config.gridSize)
+                .filter(v => v >= 0 && v <= gridRows)
                 .sort((a, b) => a - b);
             let nearestBoundary = uniqueBoundaries[0];
             let nearestDistance = Math.abs(cursorRow - nearestBoundary);
@@ -518,12 +527,12 @@ function computeDragTarget(input) {
                     nearestDistance = distance;
                 }
             }
-            const stackTargetHeight = Math.max(config.minSpan, (columnStackWindows.length + 1) * config.minSpan <= config.gridSize
-                ? Math.round(config.gridSize / (columnStackWindows.length + 1))
-                : config.minSpan);
+            const stackTargetHeight = Math.max(minRowSpan, (columnStackWindows.length + 1) * minRowSpan <= gridRows
+                ? Math.round(gridRows / (columnStackWindows.length + 1))
+                : minRowSpan);
             const boundaryThreshold = Math.max(1, stackTargetHeight / 2);
-            const canFitStackVertically = (columnStackWindows.length + 1) * config.minSpan <= config.gridSize;
-            const canUseHorizontalRelief = Boolean(cursorStackGroup && cursorStackGroup.width < config.gridSize);
+            const canFitStackVertically = (columnStackWindows.length + 1) * minRowSpan <= gridRows;
+            const canUseHorizontalRelief = Boolean(cursorStackGroup && cursorStackGroup.width < gridColumns);
             let usesStickyVerticalBoundary = false;
             const previousVerticalBoundary = input.previousTarget?.debug.mode === 'vertical-stack' &&
                 cursorStackGroup &&
@@ -550,15 +559,15 @@ function computeDragTarget(input) {
                 if (nearestBoundary <= 0) {
                     targetVSpan = [0, stackTargetHeight];
                 }
-                else if (nearestBoundary >= config.gridSize) {
-                    targetVSpan = [config.gridSize - stackTargetHeight, config.gridSize];
+                else if (nearestBoundary >= gridRows) {
+                    targetVSpan = [gridRows - stackTargetHeight, gridRows];
                 }
                 else {
                     let startRow = Math.round(nearestBoundary - stackTargetHeight / 2);
                     if (startRow < 0)
                         startRow = 0;
-                    if (startRow + stackTargetHeight > config.gridSize) {
-                        startRow = config.gridSize - stackTargetHeight;
+                    if (startRow + stackTargetHeight > gridRows) {
+                        startRow = gridRows - stackTargetHeight;
                     }
                     targetVSpan = [startRow, startRow + stackTargetHeight];
                 }
@@ -576,6 +585,10 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
     const states = {};
     const visited = new Set();
     const touched = new Set();
+    const gridColumns = (0, types_1.getGridColumns)(config);
+    const gridRows = (0, types_1.getGridRows)(config);
+    const minColumnSpan = (0, types_1.getMinColumnSpan)(config);
+    const minRowSpan = (0, types_1.getMinRowSpan)(config);
     // 1. Initialize states for all other windows on monitor
     const otherWindows = activeWindows
         .filter(w => w.windowId !== draggedId)
@@ -584,8 +597,8 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         states[w.windowId] = {
             hIndex: w.state.hIndex,
             vIndex: w.state.vIndex,
-            hSpan: [...(w.state.hSpan || [0, config.gridSize])],
-            vSpan: [...(w.state.vSpan || [0, config.gridSize])],
+            hSpan: [...(w.state.hSpan || [0, gridColumns])],
+            vSpan: [...(w.state.vSpan || [0, gridRows])],
             lastDirection: w.state.lastDirection
         };
     }
@@ -698,7 +711,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const candidates = [];
         let order = 0;
         for (const span of horizontalSpanCandidates) {
-            if (span[0] >= 0 && span[1] <= config.gridSize && spanSize(span) >= config.minSpan) {
+            if (span[0] >= 0 && span[1] <= gridColumns && spanSize(span) >= minColumnSpan) {
                 const remainingArea = spanSize(span) * stateHeight;
                 const axisPreference = (vCoverage - hCoverage) * 2 +
                     (touchesHorizontalEdge ? 1 : 0) -
@@ -713,7 +726,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             }
         }
         for (const span of verticalSpanCandidates) {
-            if (span[0] >= 0 && span[1] <= config.gridSize && spanSize(span) >= config.minSpan) {
+            if (span[0] >= 0 && span[1] <= gridRows && spanSize(span) >= minRowSpan) {
                 const remainingArea = stateWidth * spanSize(span);
                 const axisPreference = (hCoverage - vCoverage) * 2 +
                     (touchesVerticalEdge ? 1 : 0) -
@@ -768,7 +781,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             ? [[anchor.hSpan[1], movable.hSpan[1]], [movable.hSpan[0], anchor.hSpan[0]]]
             : [[movable.hSpan[0], anchor.hSpan[0]], [anchor.hSpan[1], movable.hSpan[1]]];
         for (const candidate of candidates) {
-            if (candidate[0] >= 0 && candidate[1] <= config.gridSize && spanSize(candidate) >= config.minSpan) {
+            if (candidate[0] >= 0 && candidate[1] <= gridColumns && spanSize(candidate) >= minColumnSpan) {
                 setHSpan(movableId, candidate);
                 return true;
             }
@@ -784,7 +797,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             ? [[anchor.vSpan[1], movable.vSpan[1]], [movable.vSpan[0], anchor.vSpan[0]]]
             : [[movable.vSpan[0], anchor.vSpan[0]], [anchor.vSpan[1], movable.vSpan[1]]];
         for (const candidate of candidates) {
-            if (candidate[0] >= 0 && candidate[1] <= config.gridSize && spanSize(candidate) >= config.minSpan) {
+            if (candidate[0] >= 0 && candidate[1] <= gridRows && spanSize(candidate) >= minRowSpan) {
                 setVSpan(movableId, candidate);
                 return true;
             }
@@ -850,8 +863,8 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
     if (draggedWin && draggedWin.state && draggedWin.state.hSpan && draggedWin.state.vSpan) {
         const vacantHSpan = draggedWin.state.hSpan;
         const vacantVSpan = draggedWin.state.vSpan;
-        const isHSpanCropped = (vacantHSpan[1] - vacantHSpan[0] < config.gridSize);
-        const isVSpanCropped = (vacantVSpan[1] - vacantVSpan[0] < config.gridSize);
+        const isHSpanCropped = (vacantHSpan[1] - vacantHSpan[0] < gridColumns);
+        const isVSpanCropped = (vacantVSpan[1] - vacantVSpan[0] < gridRows);
         const isSameAsTarget = spansEqual(vacantHSpan, targetHSpan) && spansEqual(vacantVSpan, targetVSpan);
         if (!isSameAsTarget && (isHSpanCropped || isVSpanCropped)) {
             const collapsedStates = collapseVacancy(draggedId, config, activeWindows);
@@ -877,7 +890,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         lastDirection: null
     };
     const tryRedistributeVerticalStackInsertion = () => {
-        if (spanSize(targetVSpan) >= config.gridSize)
+        if (spanSize(targetVSpan) >= gridRows)
             return false;
         const sameColumnWindows = otherWindows
             .filter(w => spansEqual(states[w.windowId].hSpan, targetHSpan))
@@ -886,19 +899,19 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         if (sameColumnWindows.length === 0 || collidingStackWindows.length === 0) {
             return false;
         }
-        if ((sameColumnWindows.length + 1) * config.minSpan > config.gridSize) {
+        if ((sameColumnWindows.length + 1) * minRowSpan > gridRows) {
             return false;
         }
         const stackTop = Math.min(...sameColumnWindows.map(w => states[w.windowId].vSpan[0]));
         const stackBottom = Math.max(...sameColumnWindows.map(w => states[w.windowId].vSpan[1]));
-        if (stackTop > 0 || stackBottom < config.gridSize) {
+        if (stackTop > 0 || stackBottom < gridRows) {
             return false;
         }
         const slotCount = sameColumnWindows.length + 1;
         const targetCenter = spanCenter(targetVSpan);
-        const targetIndex = Math.max(0, Math.min(slotCount - 1, Math.floor(targetCenter / (config.gridSize / slotCount))));
-        const baseHeight = Math.floor(config.gridSize / slotCount);
-        const extraRows = config.gridSize - baseHeight * slotCount;
+        const targetIndex = Math.max(0, Math.min(slotCount - 1, Math.floor(targetCenter / (gridRows / slotCount))));
+        const baseHeight = Math.floor(gridRows / slotCount);
+        const extraRows = gridRows - baseHeight * slotCount;
         const slots = [];
         let cursor = 0;
         for (let i = 0; i < slotCount; i++) {
@@ -936,9 +949,9 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
     };
     const tryRelocateTightVerticalStack = () => {
         const targetWidth = spanSize(targetHSpan);
-        if (targetWidth < config.minSpan)
+        if (targetWidth < minColumnSpan)
             return false;
-        if (spanSize(targetVSpan) >= config.gridSize)
+        if (spanSize(targetVSpan) >= gridRows)
             return false;
         const sameColumnWindows = otherWindows
             .filter(w => spansEqual(states[w.windowId].hSpan, targetHSpan))
@@ -947,15 +960,15 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         if (sameColumnWindows.length === 0 || collidingStackWindows.length === 0) {
             return false;
         }
-        const hasPinnedCollision = collidingStackWindows.some(w => spanSize(states[w.windowId].hSpan) <= config.minSpan ||
-            spanSize(states[w.windowId].vSpan) <= config.minSpan);
+        const hasPinnedCollision = collidingStackWindows.some(w => spanSize(states[w.windowId].hSpan) <= minColumnSpan ||
+            spanSize(states[w.windowId].vSpan) <= minRowSpan);
         if (!hasPinnedCollision)
             return false;
         const stackIds = new Set(sameColumnWindows.map(w => w.windowId));
         const candidateHSpans = [];
         const leftCandidate = [targetHSpan[0] - targetWidth, targetHSpan[0]];
         const rightCandidate = [targetHSpan[1], targetHSpan[1] + targetWidth];
-        if (targetHSpan[1] >= config.gridSize) {
+        if (targetHSpan[1] >= gridColumns) {
             candidateHSpans.push(leftCandidate, rightCandidate);
         }
         else if (targetHSpan[0] <= 0) {
@@ -980,7 +993,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
                 ? [[state.hSpan[0], avoidHSpan[0]], [avoidHSpan[1], state.hSpan[1]]]
                 : [[avoidHSpan[1], state.hSpan[1]], [state.hSpan[0], avoidHSpan[0]]];
             for (const candidate of candidates) {
-                if (candidate[0] >= 0 && candidate[1] <= config.gridSize && spanSize(candidate) >= config.minSpan) {
+                if (candidate[0] >= 0 && candidate[1] <= gridColumns && spanSize(candidate) >= minColumnSpan) {
                     const nextState = cloneState(state);
                     nextState.hSpan = candidate;
                     updateIndexes(nextState);
@@ -992,7 +1005,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         let bestStates = null;
         let bestScore = Number.POSITIVE_INFINITY;
         for (const [index, candidateHSpan] of candidateHSpans.entries()) {
-            if (candidateHSpan[0] < 0 || candidateHSpan[1] > config.gridSize)
+            if (candidateHSpan[0] < 0 || candidateHSpan[1] > gridColumns)
                 continue;
             const candidateStates = cloneStates(states);
             for (const stackId of stackIds) {
@@ -1029,18 +1042,18 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
     };
     const tryRelocateTightHorizontalStack = () => {
         const targetWidth = spanSize(targetHSpan);
-        if (targetWidth < config.minSpan)
+        if (targetWidth < minColumnSpan)
             return false;
-        if (spanSize(targetHSpan) >= config.gridSize)
+        if (spanSize(targetHSpan) >= gridColumns)
             return false;
         const sameRowWindows = otherWindows
             .filter(w => spansEqual(states[w.windowId].vSpan, targetVSpan))
             .sort((a, b) => states[a.windowId].hSpan[0] - states[b.windowId].hSpan[0] || a.windowId.localeCompare(b.windowId));
         const collidingRowWindows = sameRowWindows.filter(w => rectsOverlap(states[w.windowId], states[draggedId]));
         const intentNearLeftEdge = options.intentPoint ? options.intentPoint.h <= 0.65 : false;
-        const intentNearRightEdge = options.intentPoint ? options.intentPoint.h >= config.gridSize - 0.65 : false;
+        const intentNearRightEdge = options.intentPoint ? options.intentPoint.h >= gridColumns - 0.65 : false;
         const targetTouchesLeftEdge = targetHSpan[0] <= 0;
-        const targetTouchesRightEdge = targetHSpan[1] >= config.gridSize;
+        const targetTouchesRightEdge = targetHSpan[1] >= gridColumns;
         const isExplicitScreenEdgeInsertion = (targetTouchesLeftEdge && intentNearLeftEdge) ||
             (targetTouchesRightEdge && intentNearRightEdge);
         const isAutoNarrowedScreenEdgeInsertion = Boolean(options.preferredWidth && options.preferredWidth > targetWidth) &&
@@ -1048,13 +1061,13 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         if ((sameRowWindows.length < 2 && !isExplicitScreenEdgeInsertion && !isAutoNarrowedScreenEdgeInsertion) || collidingRowWindows.length === 0) {
             return false;
         }
-        const hasPinnedCollision = collidingRowWindows.some(w => spanSize(states[w.windowId].hSpan) <= config.minSpan ||
-            spanSize(states[w.windowId].vSpan) <= config.minSpan);
+        const hasPinnedCollision = collidingRowWindows.some(w => spanSize(states[w.windowId].hSpan) <= minColumnSpan ||
+            spanSize(states[w.windowId].vSpan) <= minRowSpan);
         if (!hasPinnedCollision)
             return false;
         const rowIds = new Set(sameRowWindows.map(w => w.windowId));
         const shifts = [];
-        if (targetHSpan[1] >= config.gridSize) {
+        if (targetHSpan[1] >= gridColumns) {
             shifts.push(-targetWidth);
         }
         else if (targetHSpan[0] <= 0) {
@@ -1077,7 +1090,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
             for (const rowId of rowIds) {
                 const state = candidateStates[rowId];
                 const nextHSpan = [state.hSpan[0] + shift, state.hSpan[1] + shift];
-                if (nextHSpan[0] < 0 || nextHSpan[1] > config.gridSize) {
+                if (nextHSpan[0] < 0 || nextHSpan[1] > gridColumns) {
                     failed = true;
                     break;
                 }
@@ -1102,12 +1115,12 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
     const tryCarveEdgeInsertionCorridor = () => {
         if (!options.intentPoint)
             return false;
-        if (spanSize(targetVSpan) < config.minSpan)
+        if (spanSize(targetVSpan) < minRowSpan)
             return false;
         const targetTouchesLeftEdge = targetHSpan[0] <= 0;
-        const targetTouchesRightEdge = targetHSpan[1] >= config.gridSize;
+        const targetTouchesRightEdge = targetHSpan[1] >= gridColumns;
         const intentNearLeftEdge = options.intentPoint.h <= 0.65;
-        const intentNearRightEdge = options.intentPoint.h >= config.gridSize - 0.65;
+        const intentNearRightEdge = options.intentPoint.h >= gridColumns - 0.65;
         const isExplicitScreenEdgeInsertion = (targetTouchesLeftEdge && intentNearLeftEdge) ||
             (targetTouchesRightEdge && intentNearRightEdge);
         const isAutoNarrowedScreenEdgeInsertion = Boolean(options.preferredWidth && options.preferredWidth > spanSize(targetHSpan)) &&
@@ -1123,7 +1136,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         let cursorEnd = targetTouchesLeftEdge ? targetHSpan[1] : targetHSpan[1];
         const chainIds = new Set();
         let donorId = null;
-        for (let guard = 0; guard < config.gridSize; guard++) {
+        for (let guard = 0; guard < gridColumns; guard++) {
             const columnWindows = otherWindows
                 .filter(w => {
                 const state = states[w.windowId];
@@ -1138,7 +1151,7 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
                     const state = states[w.windowId];
                     if (!hasVerticalOverlap(state.vSpan, targetVSpan))
                         return false;
-                    if (spanSize(state.hSpan) - corridorWidth < config.minSpan)
+                    if (spanSize(state.hSpan) - corridorWidth < minColumnSpan)
                         return false;
                     return targetTouchesLeftEdge
                         ? state.hSpan[0] === cursorStart
@@ -1161,11 +1174,11 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
                 }
                 cursorStart += direction * corridorWidth;
                 cursorEnd += direction * corridorWidth;
-                if (cursorStart < 0 || cursorEnd > config.gridSize)
+                if (cursorStart < 0 || cursorEnd > gridColumns)
                     return false;
                 continue;
             }
-            if (columnWidth - corridorWidth < config.minSpan) {
+            if (columnWidth - corridorWidth < minColumnSpan) {
                 return false;
             }
             donorId = columnWindows[0].windowId;
@@ -1219,8 +1232,8 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const newEnd = rightBoundary;
         let newStart = Math.min(state.hSpan[0], newEnd - width);
         newStart = Math.max(0, newStart);
-        const newEndClamped = Math.max(config.minSpan, Math.min(newEnd, newStart + width));
-        const newStartClamped = Math.max(0, newEndClamped - Math.max(config.minSpan, width));
+        const newEndClamped = Math.max(minColumnSpan, Math.min(newEnd, newStart + width));
+        const newStartClamped = Math.max(0, newEndClamped - Math.max(minColumnSpan, width));
         state.hSpan = [newStartClamped, newEndClamped];
         state.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(state.hSpan);
         touched.add(id);
@@ -1245,9 +1258,9 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const width = state.hSpan[1] - state.hSpan[0];
         const newStart = leftBoundary;
         let newEnd = Math.max(state.hSpan[1], newStart + width);
-        newEnd = Math.min(config.gridSize, newEnd);
-        const newStartClamped = Math.max(0, Math.min(newStart, newEnd - config.minSpan));
-        const newEndClamped = Math.min(config.gridSize, newStartClamped + Math.max(config.minSpan, width));
+        newEnd = Math.min(gridColumns, newEnd);
+        const newStartClamped = Math.max(0, Math.min(newStart, newEnd - minColumnSpan));
+        const newEndClamped = Math.min(gridColumns, newStartClamped + Math.max(minColumnSpan, width));
         state.hSpan = [newStartClamped, newEndClamped];
         state.hIndex = TilingEngine_1.TilingEngine.spanToHIndex(state.hSpan);
         touched.add(id);
@@ -1273,8 +1286,8 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const newEnd = bottomBoundary;
         let newStart = Math.min(state.vSpan[0], newEnd - height);
         newStart = Math.max(0, newStart);
-        const newEndClamped = Math.max(config.minSpan, Math.min(newEnd, newStart + height));
-        const newStartClamped = Math.max(0, newEndClamped - Math.max(config.minSpan, height));
+        const newEndClamped = Math.max(minRowSpan, Math.min(newEnd, newStart + height));
+        const newStartClamped = Math.max(0, newEndClamped - Math.max(minRowSpan, height));
         state.vSpan = [newStartClamped, newEndClamped];
         state.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(state.vSpan);
         touched.add(id);
@@ -1299,9 +1312,9 @@ function calculateDragTransitions(draggedId, targetHSpan, targetVSpan, config, a
         const height = state.vSpan[1] - state.vSpan[0];
         const newStart = topBoundary;
         let newEnd = Math.max(state.vSpan[1], newStart + height);
-        newEnd = Math.min(config.gridSize, newEnd);
-        const newStartClamped = Math.max(0, Math.min(newStart, newEnd - config.minSpan));
-        const newEndClamped = Math.min(config.gridSize, newStartClamped + Math.max(config.minSpan, height));
+        newEnd = Math.min(gridRows, newEnd);
+        const newStartClamped = Math.max(0, Math.min(newStart, newEnd - minRowSpan));
+        const newEndClamped = Math.min(gridRows, newStartClamped + Math.max(minRowSpan, height));
         state.vSpan = [newStartClamped, newEndClamped];
         state.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(state.vSpan);
         touched.add(id);
@@ -1363,14 +1376,18 @@ function compareWindowsByGridPosition(a, b) {
 }
 function collapseVacancy(vacantId, config, activeWindows) {
     const states = {};
+    const gridColumns = (0, types_1.getGridColumns)(config);
+    const gridRows = (0, types_1.getGridRows)(config);
+    const minColumnSpan = (0, types_1.getMinColumnSpan)(config);
+    const minRowSpan = (0, types_1.getMinRowSpan)(config);
     const vacantWin = activeWindows.find(w => w.windowId === vacantId);
     if (!vacantWin) {
         for (const w of activeWindows) {
             states[w.windowId] = {
                 hIndex: w.state.hIndex,
                 vIndex: w.state.vIndex,
-                hSpan: [...(w.state.hSpan || [0, config.gridSize])],
-                vSpan: [...(w.state.vSpan || [0, config.gridSize])],
+                hSpan: [...(w.state.hSpan || [0, gridColumns])],
+                vSpan: [...(w.state.vSpan || [0, gridRows])],
                 lastDirection: w.state.lastDirection
             };
         }
@@ -1385,8 +1402,8 @@ function collapseVacancy(vacantId, config, activeWindows) {
         states[w.windowId] = {
             hIndex: w.state.hIndex,
             vIndex: w.state.vIndex,
-            hSpan: [...(w.state.hSpan || [0, config.gridSize])],
-            vSpan: [...(w.state.vSpan || [0, config.gridSize])],
+            hSpan: [...(w.state.hSpan || [0, gridColumns])],
+            vSpan: [...(w.state.vSpan || [0, gridRows])],
             lastDirection: w.state.lastDirection
         };
     }
@@ -1425,7 +1442,7 @@ function collapseVacancy(vacantId, config, activeWindows) {
         s.vIndex = TilingEngine_1.TilingEngine.spanToVIndex(vSpan);
     };
     const sameColumnWindows = otherWindows.filter(w => spansEqual(states[w.windowId].hSpan, vacantHSpan));
-    const prefersVerticalStackCollapse = spanSize(vacantHSpan) <= config.minSpan ||
+    const prefersVerticalStackCollapse = spanSize(vacantHSpan) <= minColumnSpan ||
         sameColumnWindows.length >= 2;
     if (prefersVerticalStackCollapse && sameColumnWindows.length > 0) {
         const stackEntries = [
@@ -1452,7 +1469,7 @@ function collapseVacancy(vacantId, config, activeWindows) {
         const stackStart = Math.min(...connectedStack.map(entry => entry.vSpan[0]));
         const stackEnd = Math.max(...connectedStack.map(entry => entry.vSpan[1]));
         const stackHeight = stackEnd - stackStart;
-        if (remainingStack.length > 0 && stackHeight >= remainingStack.length * config.minSpan) {
+        if (remainingStack.length > 0 && stackHeight >= remainingStack.length * minRowSpan) {
             const previousStackStates = remainingStack.map(entry => ({
                 id: entry.id,
                 hSpan: [...states[entry.id].hSpan],

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChainTransitions = void 0;
+const types_1 = require("../types");
 const GridSpans_1 = require("./GridSpans");
 class ChainTransitions {
     /**
@@ -8,14 +9,18 @@ class ChainTransitions {
      */
     static calculateChainTransitions(activeId, direction, config, activeWindows, allVisibleSpans = [], calculateNextStateFn, getDefaultStateFn) {
         const result = {};
+        const gridColumns = (0, types_1.getGridColumns)(config);
+        const gridRows = (0, types_1.getGridRows)(config);
+        const minColumnSpan = (0, types_1.getMinColumnSpan)(config);
+        const minRowSpan = (0, types_1.getMinRowSpan)(config);
         // 1. Находим активное окно в списке
         const activeWin = activeWindows.find(w => w.windowId === activeId);
         if (!activeWin) {
             const siblingSpans = allVisibleSpans.length > 0
                 ? allVisibleSpans
                 : activeWindows.map(w => ({
-                    hSpan: w.state.hSpan || GridSpans_1.HORIZONTAL_SPANS[w.state.hIndex] || [0, config.gridSize],
-                    vSpan: w.state.vSpan || GridSpans_1.VERTICAL_SPANS[w.state.vIndex] || [0, config.gridSize]
+                    hSpan: w.state.hSpan || GridSpans_1.HORIZONTAL_SPANS[w.state.hIndex] || [0, gridColumns],
+                    vSpan: w.state.vSpan || GridSpans_1.VERTICAL_SPANS[w.state.vIndex] || [0, gridRows]
                 }));
             const defaultState = getDefaultStateFn();
             const nextActiveState = calculateNextStateFn(defaultState, direction, config, siblingSpans);
@@ -25,17 +30,17 @@ class ChainTransitions {
         // Инициализируем hSpan/vSpan в активном окне, если их нет
         const currentActiveState = { ...activeWin.state };
         if (!currentActiveState.hSpan) {
-            currentActiveState.hSpan = GridSpans_1.HORIZONTAL_SPANS[currentActiveState.hIndex] || [0, config.gridSize];
+            currentActiveState.hSpan = GridSpans_1.HORIZONTAL_SPANS[currentActiveState.hIndex] || [0, gridColumns];
         }
         if (!currentActiveState.vSpan) {
-            currentActiveState.vSpan = GridSpans_1.VERTICAL_SPANS[currentActiveState.vIndex] || [0, config.gridSize];
+            currentActiveState.vSpan = GridSpans_1.VERTICAL_SPANS[currentActiveState.vIndex] || [0, gridRows];
         }
         // Сиблинги для проверки упора активного окна
         const siblings = activeWindows
             .filter(w => w.windowId !== activeId)
             .map(w => ({
-            hSpan: w.state.hSpan || GridSpans_1.HORIZONTAL_SPANS[w.state.hIndex] || [0, config.gridSize],
-            vSpan: w.state.vSpan || GridSpans_1.VERTICAL_SPANS[w.state.vIndex] || [0, config.gridSize]
+            hSpan: w.state.hSpan || GridSpans_1.HORIZONTAL_SPANS[w.state.hIndex] || [0, gridColumns],
+            vSpan: w.state.vSpan || GridSpans_1.VERTICAL_SPANS[w.state.vIndex] || [0, gridRows]
         }));
         // 2. Рассчитываем одиночный шаг для активного окна (с передачей соседей для выявления тупиков)
         const nextActiveState = calculateNextStateFn(currentActiveState, direction, config, siblings);
@@ -48,10 +53,10 @@ class ChainTransitions {
         const normalizedWindows = activeWindows.map(w => {
             const state = { ...w.state };
             if (!state.hSpan) {
-                state.hSpan = GridSpans_1.HORIZONTAL_SPANS[state.hIndex] || [0, config.gridSize];
+                state.hSpan = GridSpans_1.HORIZONTAL_SPANS[state.hIndex] || [0, gridColumns];
             }
             if (!state.vSpan) {
-                state.vSpan = GridSpans_1.VERTICAL_SPANS[state.vIndex] || [0, config.gridSize];
+                state.vSpan = GridSpans_1.VERTICAL_SPANS[state.vIndex] || [0, gridRows];
             }
             return { windowId: w.windowId, state };
         });
@@ -67,7 +72,7 @@ class ChainTransitions {
             const newSpans = sortedWins.map(w => {
                 return w.windowId === activeId ? [...nextActiveState.hSpan] : [...w.state.hSpan];
             });
-            const MIN_WIDTH = config.minSpan;
+            const MIN_WIDTH = minColumnSpan;
             // Распространяем вправо
             for (let i = k + 1; i < N; i++) {
                 const currWin = sortedWins[i];
@@ -87,7 +92,7 @@ class ChainTransitions {
                     newSpans[i][0] = Math.max(...touchBoundaries);
                     const shift = newSpans[i][0] - origStart;
                     if (shift > 0) {
-                        let limit = config.gridSize;
+                        let limit = gridColumns;
                         for (const other of sortedWins) {
                             if (other.windowId === currWin.windowId)
                                 continue;
@@ -109,15 +114,15 @@ class ChainTransitions {
                             const hasVSpanOverlap = Math.max(other.state.vSpan[0], currWin.state.vSpan[0]) < Math.min(other.state.vSpan[1], currWin.state.vSpan[1]);
                             return other.state.hSpan[0] === origEnd && hasVSpanOverlap;
                         });
-                        const isAnchored = origEnd === config.gridSize || hasRightAnchor;
+                        const isAnchored = origEnd === gridColumns || hasRightAnchor;
                         newSpans[i][1] = isAnchored ? origEnd : origEnd + shift;
                     }
                     const width = newSpans[i][1] - newSpans[i][0];
                     if (width < MIN_WIDTH) {
                         newSpans[i][1] = newSpans[i][0] + MIN_WIDTH;
-                        if (newSpans[i][1] > config.gridSize) {
-                            newSpans[i][1] = config.gridSize;
-                            newSpans[i][0] = config.gridSize - MIN_WIDTH;
+                        if (newSpans[i][1] > gridColumns) {
+                            newSpans[i][1] = gridColumns;
+                            newSpans[i][0] = gridColumns - MIN_WIDTH;
                         }
                     }
                 }
@@ -206,7 +211,7 @@ class ChainTransitions {
             const newSpans = sortedWins.map(w => {
                 return w.windowId === activeId ? [...nextActiveState.vSpan] : [...w.state.vSpan];
             });
-            const MIN_HEIGHT = config.minSpan;
+            const MIN_HEIGHT = minRowSpan;
             // Распространяем вниз
             for (let i = k + 1; i < N; i++) {
                 const currWin = sortedWins[i];
@@ -226,7 +231,7 @@ class ChainTransitions {
                     newSpans[i][0] = Math.max(...touchBoundaries);
                     const shift = newSpans[i][0] - origStart;
                     if (shift > 0) {
-                        let limit = config.gridSize;
+                        let limit = gridRows;
                         for (const other of sortedWins) {
                             if (other.windowId === currWin.windowId)
                                 continue;
@@ -248,15 +253,15 @@ class ChainTransitions {
                             const hasHSpanOverlap = Math.max(other.state.hSpan[0], currWin.state.hSpan[0]) < Math.min(other.state.hSpan[1], currWin.state.hSpan[1]);
                             return other.state.vSpan[0] === origEnd && hasHSpanOverlap;
                         });
-                        const isAnchored = origEnd === config.gridSize || hasBottomAnchor;
+                        const isAnchored = origEnd === gridRows || hasBottomAnchor;
                         newSpans[i][1] = isAnchored ? origEnd : origEnd + shift;
                     }
                     const height = newSpans[i][1] - newSpans[i][0];
                     if (height < MIN_HEIGHT) {
                         newSpans[i][1] = newSpans[i][0] + MIN_HEIGHT;
-                        if (newSpans[i][1] > config.gridSize) {
-                            newSpans[i][1] = config.gridSize;
-                            newSpans[i][0] = config.gridSize - MIN_HEIGHT;
+                        if (newSpans[i][1] > gridRows) {
+                            newSpans[i][1] = gridRows;
+                            newSpans[i][0] = gridRows - MIN_HEIGHT;
                         }
                     }
                 }

@@ -6,7 +6,11 @@ import { IConfigProvider } from '../../core/ports/IConfigProvider';
 
 export const DEFAULT_CONFIG: Config = {
   gridSize: 12,
+  gridColumns: 12,
+  gridRows: 6,
   minSpan: 2,
+  minColumnSpan: 2,
+  minRowSpan: 2,
   step: 2,
   gaps: 0,
 };
@@ -44,9 +48,21 @@ export class JsonFileConfigProvider implements IConfigProvider {
         gridSize: typeof parsed.gridSize === 'number' && parsed.gridSize > 0
           ? parsed.gridSize
           : DEFAULT_CONFIG.gridSize,
+        gridColumns: typeof parsed.gridColumns === 'number' && parsed.gridColumns > 0
+          ? parsed.gridColumns
+          : (typeof parsed.gridSize === 'number' && parsed.gridSize > 0 ? parsed.gridSize : DEFAULT_CONFIG.gridColumns),
+        gridRows: typeof parsed.gridRows === 'number' && parsed.gridRows > 0
+          ? parsed.gridRows
+          : (typeof parsed.gridSize === 'number' && parsed.gridSize > 0 ? parsed.gridSize : DEFAULT_CONFIG.gridRows),
         minSpan: typeof parsed.minSpan === 'number' && parsed.minSpan > 0
           ? parsed.minSpan
           : DEFAULT_CONFIG.minSpan,
+        minColumnSpan: typeof parsed.minColumnSpan === 'number' && parsed.minColumnSpan > 0
+          ? parsed.minColumnSpan
+          : (typeof parsed.minSpan === 'number' && parsed.minSpan > 0 ? parsed.minSpan : DEFAULT_CONFIG.minColumnSpan),
+        minRowSpan: typeof parsed.minRowSpan === 'number' && parsed.minRowSpan > 0
+          ? parsed.minRowSpan
+          : (typeof parsed.minSpan === 'number' && parsed.minSpan > 0 ? parsed.minSpan : DEFAULT_CONFIG.minRowSpan),
         step: typeof parsed.step === 'number' && parsed.step > 0
           ? parsed.step
           : DEFAULT_CONFIG.step,

@@ -1,4 +1,4 @@
-import { Direction, Config, WindowState } from '../types';
+import { Config, Direction, WindowState } from '../types';
 export declare class ChainTransitions {
     /**
      * Рассчитывает новые состояния для всей цепочки соприкасающихся окон на основе направления

@@ -1,20 +1,22 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GeometryConverter = void 0;
+const types_1 = require("../types");
 const GridSpans_1 = require("./GridSpans");
 class GeometryConverter {
     /**
      * Преобразует физическую геометрию окна в логические колонки (hSpan) на указанном мониторе
      */
-    static geometryToHSpan(geom, monitor, config = { gridSize: 12, minSpan: 2, step: 2, gaps: 0 }) {
+    static geometryToHSpan(geom, monitor, config = { gridSize: 12, gridColumns: 12, gridRows: 12, minSpan: 2, minColumnSpan: 2, minRowSpan: 2, step: 2, gaps: 0 }) {
         const { workarea } = monitor;
-        const colWidth = workarea.width / config.gridSize;
+        const gridColumns = (0, types_1.getGridColumns)(config);
+        const colWidth = workarea.width / gridColumns;
         const relLeft = geom.x - workarea.x;
         const relRight = geom.x + geom.width - workarea.x;
         let startCol = Math.floor(relLeft / colWidth);
         const startRemainder = (relLeft / colWidth) - startCol;
         if (startRemainder > 0.2) {
-            startCol = Math.min(config.gridSize - 1, startCol + 1);
+            startCol = Math.min(gridColumns - 1, startCol + 1);
         }
         startCol = Math.max(0, startCol);
         let endCol = Math.ceil(relRight / colWidth);
@@ -22,21 +24,22 @@ class GeometryConverter {
         if (endRemainder > 0.2) {
             endCol = Math.max(1, endCol - 1);
         }
-        endCol = Math.min(config.gridSize, endCol);
+        endCol = Math.min(gridColumns, endCol);
         return [startCol, endCol];
     }
     /**
      * Преобразует физическую геометрию окна в логические строки (vSpan) на указанном мониторе
      */
-    static geometryToVSpan(geom, monitor, config = { gridSize: 12, minSpan: 2, step: 2, gaps: 0 }) {
+    static geometryToVSpan(geom, monitor, config = { gridSize: 12, gridColumns: 12, gridRows: 12, minSpan: 2, minColumnSpan: 2, minRowSpan: 2, step: 2, gaps: 0 }) {
         const { workarea } = monitor;
-        const rowHeight = workarea.height / config.gridSize;
+        const gridRows = (0, types_1.getGridRows)(config);
+        const rowHeight = workarea.height / gridRows;
         const relTop = geom.y - workarea.y;
         const relBottom = geom.y + geom.height - workarea.y;
         let startRow = Math.floor(relTop / rowHeight);
         const startRemainder = (relTop / rowHeight) - startRow;
         if (startRemainder > 0.2) {
-            startRow = Math.min(config.gridSize - 1, startRow + 1);
+            startRow = Math.min(gridRows - 1, startRow + 1);
         }
         startRow = Math.max(0, startRow);
         let endRow = Math.ceil(relBottom / rowHeight);
@@ -44,7 +47,7 @@ class GeometryConverter {
         if (endRemainder > 0.2) {
             endRow = Math.max(1, endRow - 1);
         }
-        endRow = Math.min(config.gridSize, endRow);
+        endRow = Math.min(gridRows, endRow);
         return [startRow, endRow];
     }
     /**
@@ -53,10 +56,12 @@ class GeometryConverter {
     static stateToGeometry(state, screen, config) {
         const { workarea } = screen;
         const gaps = config.gaps || 0;
-        const hSpan = state.hSpan || GridSpans_1.HORIZONTAL_SPANS[state.hIndex] || [0, config.gridSize];
-        const vSpan = state.vSpan || GridSpans_1.VERTICAL_SPANS[state.vIndex] || [0, config.gridSize];
-        const colWidth = workarea.width / config.gridSize;
-        const rowHeight = workarea.height / config.gridSize;
+        const gridColumns = (0, types_1.getGridColumns)(config);
+        const gridRows = (0, types_1.getGridRows)(config);
+        const hSpan = state.hSpan || GridSpans_1.HORIZONTAL_SPANS[state.hIndex] || [0, gridColumns];
+        const vSpan = state.vSpan || GridSpans_1.VERTICAL_SPANS[state.vIndex] || [0, gridRows];
+        const colWidth = workarea.width / gridColumns;
+        const rowHeight = workarea.height / gridRows;
         const xStart = workarea.x + Math.round(hSpan[0] * colWidth);
         const xEnd = workarea.x + Math.round(hSpan[1] * colWidth);
         let width = xEnd - xStart;

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChainBlockDetector = void 0;
+const types_1 = require("../types");
 class ChainBlockDetector {
     /**
      * Проверяет, заблокирована ли цепочка соприкасающихся окон слева от текущей границы
@@ -24,7 +25,7 @@ class ChainBlockDetector {
         if (chainLength === 0)
             return false;
         const freeSpace = currentStart;
-        const minChainWidth = chainLength * config.minSpan;
+        const minChainWidth = chainLength * (0, types_1.getMinColumnSpan)(config);
         const compressionReserve = currentChainWidth - minChainWidth;
         const movementReserve = freeSpace + compressionReserve;
         return movementReserve <= 0;
@@ -50,8 +51,8 @@ class ChainBlockDetector {
         }
         if (chainLength === 0)
             return false;
-        const freeSpace = config.gridSize - currentEnd;
-        const minChainWidth = chainLength * config.minSpan;
+        const freeSpace = (0, types_1.getGridColumns)(config) - currentEnd;
+        const minChainWidth = chainLength * (0, types_1.getMinColumnSpan)(config);
         const compressionReserve = currentChainWidth - minChainWidth;
         const movementReserve = freeSpace + compressionReserve;
         return movementReserve <= 0;
@@ -78,7 +79,7 @@ class ChainBlockDetector {
         if (chainLength === 0)
             return false;
         const freeSpace = currentStart;
-        const minChainHeight = chainLength * config.minSpan;
+        const minChainHeight = chainLength * (0, types_1.getMinRowSpan)(config);
         const compressionReserve = currentChainHeight - minChainHeight;
         const movementReserve = freeSpace + compressionReserve;
         return movementReserve <= 0;
@@ -104,8 +105,8 @@ class ChainBlockDetector {
         }
         if (chainLength === 0)
             return false;
-        const freeSpace = config.gridSize - currentEnd;
-        const minChainHeight = chainLength * config.minSpan;
+        const freeSpace = (0, types_1.getGridRows)(config) - currentEnd;
+        const minChainHeight = chainLength * (0, types_1.getMinRowSpan)(config);
         const compressionReserve = currentChainHeight - minChainHeight;
         const movementReserve = freeSpace + compressionReserve;
         return movementReserve <= 0;

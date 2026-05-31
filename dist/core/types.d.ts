@@ -29,7 +29,15 @@ export interface CachedWindowState {
 }
 export interface Config {
     gridSize: number;
+    gridColumns?: number;
+    gridRows?: number;
     minSpan: number;
+    minColumnSpan?: number;
+    minRowSpan?: number;
     step: number;
     gaps: number;
 }
+export declare function getGridColumns(config: Config): number;
+export declare function getGridRows(config: Config): number;
+export declare function getMinColumnSpan(config: Config): number;
+export declare function getMinRowSpan(config: Config): number;
