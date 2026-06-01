@@ -6,8 +6,27 @@ export declare class TilingUseCase {
     private shell;
     private cache;
     private configProvider;
+    private static readonly INVERSE_RESIZE_TTL_MS;
+    private static readonly MAX_RESIZE_UNDO_DEPTH;
+    private resizeTransactions;
+    private cacheWriteGeneration;
     constructor(shell: IShellAdapter, cache: ICacheManager, configProvider: IConfigProvider);
     tile(direction: Direction): void;
     restore(): void;
     clearCache(): void;
+    private nextCacheWriteGeneration;
+    private captureStates;
+    private cloneState;
+    private rememberResizeTransaction;
+    private getUndoResizeTransaction;
+    private pruneResizeTransactions;
+    private refreshUndoStack;
+    private capturePhysicalStates;
+    private applyStates;
+    private applySingleState;
+    private resizeAxis;
+    private oppositeDirection;
+    private hasMeaningfulResize;
+    private statesHaveSameSpans;
+    private spansEqual;
 }

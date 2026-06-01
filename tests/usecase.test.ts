@@ -107,12 +107,16 @@ describe('TilingUseCase keyboard UX', () => {
     }
   };
 
-  const state = (hSpan: [number, number], vSpan: [number, number] = [0, 12]): WindowState => ({
+  const state = (
+    hSpan: [number, number],
+    vSpan: [number, number] = [0, 12],
+    lastDirection: WindowState['lastDirection'] = 'right'
+  ): WindowState => ({
     hIndex: TilingEngine.spanToHIndex(hSpan),
     vIndex: TilingEngine.spanToVIndex(vSpan),
     hSpan,
     vSpan,
-    lastDirection: 'right'
+    lastDirection
   });
 
   test('continues keyboard resize from the active window physical shape after manual resizing', () => {
@@ -143,5 +147,138 @@ describe('TilingUseCase keyboard UX', () => {
     expect(shell.applied.chrome).toEqual(TilingEngine.stateToGeometry(state([4, 7]), monitor, config));
     expect(shell.applied.chat).toEqual(TilingEngine.stateToGeometry(state([7, 12]), monitor, config));
     expect(shell.applied['left-stack']).toEqual(TilingEngine.stateToGeometry(leftStackState, monitor, config));
+  });
+
+  test('undoes the previous vertical keyboard resize when the next key is the opposite direction', () => {
+    const cache = new FakeCache();
+    const topState = state([0, 12], [0, 4], 'down');
+    const middleState = state([0, 12], [4, 8], 'down');
+    const bottomState = state([0, 12], [8, 12], 'down');
+
+    cache.saveState('top', topState, TilingEngine.stateToGeometry(topState, monitor, config), { x: 0, y: 0, width: 1200, height: 300 });
+    cache.saveState('middle', middleState, TilingEngine.stateToGeometry(middleState, monitor, config), { x: 0, y: 300, width: 1200, height: 300 });
+    cache.saveState('bottom', bottomState, TilingEngine.stateToGeometry(bottomState, monitor, config), { x: 0, y: 600, width: 1200, height: 300 });
+
+    const shell = new FakeShell(
+      'middle',
+      {
+        top: TilingEngine.stateToGeometry(topState, monitor, config),
+        middle: TilingEngine.stateToGeometry(middleState, monitor, config),
+        bottom: TilingEngine.stateToGeometry(bottomState, monitor, config)
+      },
+      ['top', 'middle', 'bottom'],
+      [monitor]
+    );
+    const useCase = new TilingUseCase(shell, cache, new FakeConfigProvider(config));
+
+    useCase.tile('down');
+    expect(shell.applied.middle).toEqual(TilingEngine.stateToGeometry(state([0, 12], [4, 9], 'down'), monitor, config));
+    expect(shell.applied.bottom).toEqual(TilingEngine.stateToGeometry(state([0, 12], [9, 12], 'down'), monitor, config));
+
+    useCase.tile('up');
+    expect(shell.applied.middle).toEqual(TilingEngine.stateToGeometry(middleState, monitor, config));
+    expect(shell.applied.bottom).toEqual(TilingEngine.stateToGeometry(bottomState, monitor, config));
+  });
+
+  test('undoes the previous horizontal keyboard resize when the next key is the opposite direction', () => {
+    const cache = new FakeCache();
+    const leftState = state([0, 4]);
+    const middleState = state([4, 8]);
+    const rightState = state([8, 12]);
+
+    cache.saveState('left', leftState, TilingEngine.stateToGeometry(leftState, monitor, config), { x: 0, y: 0, width: 400, height: 900 });
+    cache.saveState('middle', middleState, TilingEngine.stateToGeometry(middleState, monitor, config), { x: 400, y: 0, width: 400, height: 900 });
+    cache.saveState('right', rightState, TilingEngine.stateToGeometry(rightState, monitor, config), { x: 800, y: 0, width: 400, height: 900 });
+
+    const shell = new FakeShell(
+      'middle',
+      {
+        left: TilingEngine.stateToGeometry(leftState, monitor, config),
+        middle: TilingEngine.stateToGeometry(middleState, monitor, config),
+        right: TilingEngine.stateToGeometry(rightState, monitor, config)
+      },
+      ['left', 'middle', 'right'],
+      [monitor]
+    );
+    const useCase = new TilingUseCase(shell, cache, new FakeConfigProvider(config));
+
+    useCase.tile('right');
+    expect(shell.applied.middle).toEqual(TilingEngine.stateToGeometry(state([4, 9]), monitor, config));
+    expect(shell.applied.right).toEqual(TilingEngine.stateToGeometry(state([9, 12]), monitor, config));
+
+    useCase.tile('left');
+    expect(shell.applied.middle).toEqual(TilingEngine.stateToGeometry(middleState, monitor, config));
+    expect(shell.applied.right).toEqual(TilingEngine.stateToGeometry(rightState, monitor, config));
+  });
+
+  test('keeps a short undo stack for repeated keyboard resizes on the same axis', () => {
+    const cache = new FakeCache();
+    const topState = state([0, 12], [0, 4], 'up');
+    const middleState = state([0, 12], [4, 8], 'up');
+    const bottomState = state([0, 12], [8, 12], 'up');
+
+    cache.saveState('top', topState, TilingEngine.stateToGeometry(topState, monitor, config), { x: 0, y: 0, width: 1200, height: 300 });
+    cache.saveState('middle', middleState, TilingEngine.stateToGeometry(middleState, monitor, config), { x: 0, y: 300, width: 1200, height: 300 });
+    cache.saveState('bottom', bottomState, TilingEngine.stateToGeometry(bottomState, monitor, config), { x: 0, y: 600, width: 1200, height: 300 });
+
+    const shell = new FakeShell(
+      'middle',
+      {
+        top: TilingEngine.stateToGeometry(topState, monitor, config),
+        middle: TilingEngine.stateToGeometry(middleState, monitor, config),
+        bottom: TilingEngine.stateToGeometry(bottomState, monitor, config)
+      },
+      ['top', 'middle', 'bottom'],
+      [monitor]
+    );
+    const useCase = new TilingUseCase(shell, cache, new FakeConfigProvider(config));
+
+    useCase.tile('up');
+    useCase.tile('up');
+    expect(shell.applied.middle).toEqual(TilingEngine.stateToGeometry(state([0, 12], [2, 8], 'up'), monitor, config));
+    expect(shell.applied.top).toEqual(TilingEngine.stateToGeometry(state([0, 12], [0, 2], 'up'), monitor, config));
+
+    useCase.tile('down');
+    expect(shell.applied.middle).toEqual(TilingEngine.stateToGeometry(state([0, 12], [3, 8], 'up'), monitor, config));
+    expect(shell.applied.top).toEqual(TilingEngine.stateToGeometry(state([0, 12], [0, 3], 'up'), monitor, config));
+
+    useCase.tile('down');
+    expect(shell.applied.middle).toEqual(TilingEngine.stateToGeometry(middleState, monitor, config));
+    expect(shell.applied.top).toEqual(TilingEngine.stateToGeometry(topState, monitor, config));
+  });
+
+  test('lets the opposite direction resize normally after the undo window expires', () => {
+    const now = jest.spyOn(Date, 'now');
+    now.mockReturnValue(1_000);
+
+    const cache = new FakeCache();
+    const topState = state([0, 12], [0, 4], 'down');
+    const middleState = state([0, 12], [4, 8], 'down');
+    const bottomState = state([0, 12], [8, 12], 'down');
+
+    cache.saveState('top', topState, TilingEngine.stateToGeometry(topState, monitor, config), { x: 0, y: 0, width: 1200, height: 300 });
+    cache.saveState('middle', middleState, TilingEngine.stateToGeometry(middleState, monitor, config), { x: 0, y: 300, width: 1200, height: 300 });
+    cache.saveState('bottom', bottomState, TilingEngine.stateToGeometry(bottomState, monitor, config), { x: 0, y: 600, width: 1200, height: 300 });
+
+    const shell = new FakeShell(
+      'middle',
+      {
+        top: TilingEngine.stateToGeometry(topState, monitor, config),
+        middle: TilingEngine.stateToGeometry(middleState, monitor, config),
+        bottom: TilingEngine.stateToGeometry(bottomState, monitor, config)
+      },
+      ['top', 'middle', 'bottom'],
+      [monitor]
+    );
+    const useCase = new TilingUseCase(shell, cache, new FakeConfigProvider(config));
+
+    useCase.tile('down');
+    now.mockReturnValue(4_000);
+    useCase.tile('up');
+
+    expect(shell.applied.middle).toEqual(TilingEngine.stateToGeometry(state([0, 12], [3, 9], 'up'), monitor, config));
+    expect(shell.applied.top).toEqual(TilingEngine.stateToGeometry(state([0, 12], [0, 3], 'up'), monitor, config));
+
+    now.mockRestore();
   });
 });

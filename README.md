@@ -1,102 +1,156 @@
-# Dynamic Tiler 🚀
+# Dynamic Tiler
 
-Универсальная Linux-утилита на **TypeScript/Node.js** для интеллектуального динамического тайлинга окон с помощью клавиатурных сочетаний в stacking-окружениях (Cinnamon, XFCE, MATE и др. под X11).
+English | [Русский](README.ru.md)
 
-Утилита спроектирована по принципам **Чистой Архитектуры**, что полностью отделяет математическое ядро от системной инфраструктуры X11/Node.js и позволяет в будущем бесшовно запускать ее в качестве нативного расширения Cinnamon (GJS/Muffin) или GNOME Shell (Mutter).
+Dynamic Tiler is an intent-aware tiling extension for Cinnamon. It gives a stacking desktop the part people actually want from a tiling window manager: fast keyboard layouts, fluid mouse-driven rearrangement, visible previews, and forgiving behavior when windows are dragged, resized, swapped, extracted, or pushed into tight spaces.
 
----
+The project is built around a pure TypeScript tiling engine and a Cinnamon extension shell. The engine owns the grid math; the extension owns the user experience: shortcuts, drag-and-drop snapping, monitor-aware settings, previews, and diagnostics.
 
-## ✨ Ключевые Фичи
+## Why It Feels Different
 
-*   **Динамическая Сетка 12x12**: Сжимает и расширяет активное окно по сетке с шагом 2 логические колонки (до минимального размера в 2 колонки) при последовательном нажатии одной и той же клавиши.
-*   **Угловой Режим (Corner Mode)**: Нажатие перпендикулярной стрелки (например, `Super+Down` после `Super+Left`) фиксирует горизонтальный спан и вычисляет вертикальный спан, прижимая окно в угол (нативный "уголок").
-*   **Умное заполнение пустот (Smart 2D Initial Layout)**: При первом тайлинге окна утилита сканирует экран на предмет занятых окон по сетке 12x12 и находит ближайший пустой 2D-квадрант на стороне тайлинга вместо грубого наложения окон друг на друга.
-*   **Двумерное расталкивание по цепочке**: При расширении окна соседние соприкасающиеся окна аккуратно сдвигаются или сжимаются по принципу "домино" (цепная реакция). При этом учитывается двумерное перекрытие окон по перпендикулярной оси, исключая ложные сдвиги окон, находящихся на разной высоте.
-*   **Умная адаптация к ручным изменениям (Smart Adapt)**: Если соседнее окно было изменено пользователем вручную мышкой, утилита автоматически конвертирует его текущие физические размеры обратно в логическую сетку (если отклонение от кэша $> 80$ пикселей) и производит цепное расталкивание корректно.
-*   **Smart Reset (Умный сброс)**: Если вы изменили размер активного окна вручную мышкой (более чем на 80 пикселей), утилита сбросит его цикл тайлинга и начнет расчет заново.
-*   **Ограничение Safe Gaps**: Величина отступов (`gaps`) гарантированно не съедает полезную площадь окна ниже 100px, если исходные размеры окна (задаваемые логическим спаном) превышают этот порог. Если логический спан окна слишком мал, величина отступов динамически уменьшается индивидуально для этого окна для сохранения минимальной видимой области.
-*   **Честный Конфиг**: Настройка сетки осуществляется через прозрачные параметры `gridSize` (12), `minSpan` (2) и `step` (2) вместо абстрактных `fractions`.
-*   **Определение монитора по пересечению**: Активный монитор определяется по максимальной площади геометрического пересечения с рабочей областью (`workarea`) мониторов, что предотвращает ложные скачки при наличии теней и тонких рамок.
+- Keyboard tiling is elastic instead of binary: press the same direction repeatedly to grow, shrink, or move by grid steps.
+- Opposite-direction resize has short-term memory: if you resize the wrong way and immediately press the opposite arrow, Dynamic Tiler restores the previous shape instead of surprising you with a new expansion.
+- Drag-and-drop is layout-aware: drop a window into a stack, between neighbors, at a screen edge, or into a narrow corridor, and the solver tries to preserve the most natural layout.
+- Swap is explicit and readable: hold the swap modifier and windows exchange their geometry, with a dedicated preview style.
+- Floating extraction is safe: pull a tiled window out with the modifier, and the original slot collapses only when the gesture clearly leaves the source.
+- Multi-monitor grids are practical: regular horizontal, vertical, and ultrawide monitors can use different column/row profiles, with optional per-monitor overrides.
 
----
+## Core Features
 
-## 📂 Структура проекта (Чистая Архитектура)
+- Native Cinnamon extension for live keyboard and mouse workflows.
+- Drag-and-drop snapping with insertion into horizontal and vertical stacks.
+- Edge insertion between a window and the monitor boundary.
+- Intent-aware carving when a wide window is inserted into a narrow stack.
+- Window swap mode with configurable modifier.
+- Per-monitor grid profiles: horizontal, vertical, ultrawide, and explicit overrides.
+- Configurable gaps, preview, shortcuts, DnD modifier, swap modifier, and debug logs.
+- Clean TypeScript core with focused unit, regression, and property/fuzz tests.
+- Optional legacy CLI/X11 path for direct command experiments.
 
-*   `src/core/` — Бизнес-логика приложения:
-    *   `ports/` — Интерфейсы инфраструктуры (`IShellAdapter`, `ICacheManager`, `IConfigProvider`).
-    *   `usecases/` — Сценарии использования (`TilingUseCase`).
-    *   `engine/` — Математическое ядро (чистая математика 12-колоночной сетки, свободная от Node.js/X11 зависимостей).
-        *   `GridSpans.ts` — Хранение и маппинг индексов сетки.
-        *   `GeometryConverter.ts` — Перевод физической геометрии в логические спаны и обратно с учетом Safe Gaps.
-        *   `InitialLayout.ts` — Пространственный двумерный поиск пустот на экране.
-        *   `ChainBlockDetector.ts` — Анализ тупиков и упоров цепочки окон.
-        *   `ChainTransitions.ts` — Двумерное цепное расталкивание окон.
-*   `src/infrastructure/` — Реализация инфраструктурных портов:
-    *   `x11/` — Адаптер к X11 через `wmctrl`, `xdotool` и `xprop` (с поиском монитора по площади перекрытия).
-    *   `cache/` — Кэширование состояний окон в `~/.cache/dynamic-tiler/state.json`.
-    *   `config/` — Чтение конфигурации из `~/.config/dynamic-tiler/config.json`.
-*   `src/cli.ts` — Точка входа для CLI-интерфейса.
-*   `tests/` — Юнит-тесты на Jest (100% покрытие математического ядра).
+## Installation
 
----
+### Requirements
 
-## 🛠 Установка зависимостей
+- Linux Mint / Cinnamon on X11.
+- Node.js and npm.
+- For the legacy CLI path only: `wmctrl`, `xdotool`, and `x11-utils`.
 
-Для работы утилиты требуются стандартные Linux-инструменты управления окнами в X11: `wmctrl`, `xdotool` и `xprop`.
+On Ubuntu/Linux Mint:
 
-### Ubuntu / Linux Mint / Cinnamon:
 ```bash
 sudo apt update
-sudo apt install wmctrl xdotool x11-utils
+sudo apt install nodejs npm wmctrl xdotool x11-utils
 ```
 
----
+### Build And Install The Cinnamon Extension
 
-## 🚀 Быстрый старт
-
-### 1. Сборка проекта
 ```bash
-# Установка зависимостей Node.js
 npm install
-
-# Запуск тестов
 npm test
+npm run build:extension
+```
 
-# Компиляция TypeScript -> JavaScript
+`npm run build:extension` does two things:
+
+- builds a local extension bundle into `build/extension/`;
+- installs the same bundle into `~/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/`.
+
+After building, reload Cinnamon or reload the extension from the Cinnamon Extensions app so the new `extension.js`, `settings-schema.json`, and `metadata.json` are picked up.
+
+For a full build including the legacy CLI output:
+
+```bash
 npm run build
 ```
 
-### 2. Глобальная регистрация команды
-Чтобы команда `dynamic-tiler` была доступна в любой точке системы (включая настройки хоткеев), выполните команду связи в папке проекта:
-```bash
-sudo npm link
+## Settings
+
+Open Cinnamon Extensions, select Dynamic Tiler, and use the settings window.
+
+The settings are split into tabs:
+
+- Layout: gaps, preview, default grid, monitor profiles, and per-monitor overrides.
+- Drag & Drop: DnD enablement and snap modifier.
+- Keyboard: tile, shift, and restore shortcuts.
+- Diagnostics: debug logging.
+
+Useful defaults:
+
+- default grid: `12 x 6`;
+- regular horizontal monitors: `6 x 6`;
+- vertical monitors: `6 x 12`;
+- ultrawide monitors: `12 x 6`;
+- minimum window size: `2 x 2` grid cells.
+
+Per-monitor overrides use this format:
+
+```text
+0:12x6, 1:6x12, 2:12x6
 ```
-*Теперь вы можете вызвать утилиту из терминала просто как `dynamic-tiler tile left`!*
 
----
+Debug logs are disabled by default. When enabled, Dynamic Tiler writes detailed traces to `~/.xsession-errors`.
 
-## ⌨️ Настройка горячих клавиш (на примере Cinnamon)
+## Keyboard Workflow
 
-### Вариант 1: Автоматическая настройка (Рекомендуется)
-Мы подготовили готовый скрипт, который автоматически отключает конфликтующие стандартные сочетания Cinnamon и прописывает все хоткеи в систему через `gsettings` за один клик:
+Default shortcuts are configured in the extension settings:
+
+| Action | Default shortcut | Result |
+| --- | --- | --- |
+| Tile left | `Super + Left` | Move or resize the focused window left |
+| Tile right | `Super + Right` | Move or resize the focused window right |
+| Tile up | `Super + Up` | Move or resize the focused window upward |
+| Tile down | `Super + Down` | Move or resize the focused window downward |
+| Shift left/right/up/down | Configurable | Send a window directly toward a side |
+| Restore | Configurable | Restore the saved pre-tiling geometry |
+
+The keyboard model is intentionally forgiving. If you resize a window and quickly press the opposite direction, Dynamic Tiler treats that as a correction and restores the previous geometry. After a short delay, the opposite direction becomes a normal resize again.
+
+## Mouse Workflow
+
+Hold the configured DnD modifier while dragging a window to make it participate in the grid.
+
+Typical gestures:
+
+- drop near a screen side to snap into that side;
+- drop near a vertical position to choose top half, bottom half, or full height;
+- drop between stacked windows to insert into the stack;
+- drop between an edge window and the monitor boundary to create a new slot;
+- hold the swap modifier to exchange two windows instead of inserting.
+
+The preview should always describe the intended result before the drop. Normal insertion, blocked placement, and swap use different visual treatment.
+
+## Development
+
 ```bash
-./setup-keybindings.sh
+npm install
+npm test
+npm run build:cli
+npm run build:extension
 ```
 
-### Вариант 2: Ручная настройка
-Вы можете настроить комбинации клавиш вручную в графическом интерфейсе Cinnamon:
-1. Откройте **Системные настройки** (System Settings) $\rightarrow$ **Клавиатура** (Keyboard) $\rightarrow$ вкладка **Комбинации клавиш** (Shortcuts).
-2. В левой колонке выберите **Собственные комбинации** (Custom Shortcuts).
-3. Нажмите кнопку **Добавить собственную комбинацию** (Add custom shortcut) и настройте следующие параметры:
+Important paths:
 
-| Название комбинации | Команда | Клавиши | Действие |
-| :--- | :--- | :--- | :--- |
-| **Tile Left** | `dynamic-tiler tile left` | `Super + Left` | Эластичный тайлинг влево |
-| **Tile Right** | `dynamic-tiler tile right` | `Super + Right` | Эластичный тайлинг вправо |
-| **Tile Up** | `dynamic-tiler tile up` | `Super + Up` | Эластичный тайлинг вверх |
-| **Tile Down** | `dynamic-tiler tile down` | `Super + Down` | Эластичный тайлинг вниз |
-| **Shift Left (Fast 1/2)** | `dynamic-tiler shift left` | `Ctrl + Super + Left` | Быстрый перенос на левую половину |
-| **Shift Right (Fast 1/2)** | `dynamic-tiler shift right` | `Ctrl + Super + Right` | Быстрый перенос на правую половину |
-| **Restore Window** | `dynamic-tiler restore` | `Super + BackSpace` | Восстановление исходного размера окна |
+- `src/core/` - pure tiling math and use cases.
+- `src/DragTiling.ts` - DnD target selection, insertion, carving, swap, and vacancy collapse.
+- `src/extension.ts` - Cinnamon integration, settings, shortcuts, previews, and drag hooks.
+- `settings-schema.json` - Cinnamon settings UI.
+- `tests/` - regression, use-case, and property/fuzz coverage.
+- `build/extension/` - generated local Cinnamon extension bundle.
+- `~/.local/share/cinnamon/extensions/dynamic-tiler@cinnamon.org/` - installed Cinnamon extension bundle.
 
-4. Перейдите в раздел **Окна** (Windows) $\rightarrow$ **Тайлинг** (Tiling) и отключите стандартные системные хоткеи для тайлинга, чтобы избежать конфликтов.
+## Legacy CLI
+
+The CLI still exists for experiments and direct X11 automation:
+
+```bash
+npm run build:cli
+node dist/cli.js tile left
+node dist/cli.js tile right
+node dist/cli.js restore
+```
+
+For daily use, the Cinnamon extension is the primary product.
+
+## Status
+
+Dynamic Tiler is an active UX-first tiling experiment. The current focus is polishing edge cases where real users live: narrow stacks, screen edges, multi-monitor grids, modifier mistakes, floating extraction, and the subtle difference between "I want to insert this window" and "I want these two windows to trade places."
