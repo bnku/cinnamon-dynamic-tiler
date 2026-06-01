@@ -530,7 +530,7 @@ class DynamicTilerExtension {
 
     try {
       const [mx, my, mods] = global.get_pointer();
-      const isModifierPressed = this.isConfiguredModifierPressed(this['dnd-modifier-key'], '<Shift>d', mods);
+      const isModifierPressed = this.isConfiguredModifierPressed(this['dnd-modifier-key'], '<Control>d', mods);
       const isSwapModifierPressed =
         this.experimentalSwapSameShapeWindows === true &&
         this.isConfiguredModifierPressed(this['dnd-swap-modifier-key'], '<Control><Shift>d', mods);
@@ -1175,7 +1175,7 @@ class DynamicTilerExtension {
         this.shell.applyGeometry(windowId, cached.originalGeometry);
         this.cache.clearState(windowId);
 
-        this.debugLog(`[Dynamic Tiler] Successfully restored and collapsed window ${windowId}`);
+        this.debugLog(`[Dynamic Tiler] [Keyboard] Successfully restored and collapsed window ${windowId}`);
       }
     } catch (e: any) {
       global.logError(`[Dynamic Tiler] Failed to restore and collapse window: ${e.message}`);
@@ -1225,7 +1225,7 @@ class DynamicTilerExtension {
       : '-';
 
     this.debugLog(
-      `[Dynamic Tiler] DnD trace status=${dragResult.status}` +
+      `[Dynamic Tiler] [DND] DnD trace status=${dragResult.status}` +
       ` reason=${dragResult.reason || 'ok'}` +
       ` dragged=${this.draggedWindowId}` +
       ` size=${windowWidth}x${windowHeight}` +
@@ -1385,6 +1385,8 @@ class DynamicTilerExtension {
     try {
       Main.keybindingManager.addHotKey(key, value, () => {
         try {
+          const activeId = this.shell.getActiveWindowId();
+          this.debugLog(`[Dynamic Tiler] [Keyboard] Action triggered: key=${value}, action=${action}, activeWindowId=${activeId || 'none'}`);
           if (action === 'restore') {
             this.restoreAndCollapseActiveWindow();
           } else {

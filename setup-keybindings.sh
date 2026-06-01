@@ -31,9 +31,17 @@ names[5]="Shift Right (Fast 1/2)"
 commands[5]="dynamic-tiler shift right"
 bindings[5]="['<Primary><Super>Right']"
 
-names[6]="Restore Window"
-commands[6]="dynamic-tiler restore"
-bindings[6]="['<Super>BackSpace']"
+names[6]="Shift Up (Fast 1/2)"
+commands[6]="dynamic-tiler shift up"
+bindings[6]="['<Primary><Super>Up']"
+
+names[7]="Shift Down (Fast 1/2)"
+commands[7]="dynamic-tiler shift down"
+bindings[7]="['<Primary><Super>Down']"
+
+names[8]="Restore Window"
+commands[8]="dynamic-tiler restore"
+bindings[8]="['<Super>BackSpace']"
 
 echo "Отключаем стандартные конфликтующие хоткеи Cinnamon для Super + стрелки..."
 gsettings set org.cinnamon.desktop.keybindings.window-muffin tile-to-left "['disabled']" 2>/dev/null
@@ -49,7 +57,7 @@ current_bindings=$(gsettings get org.cinnamon.settings-daemon.plugins.media-keys
 # Инициализируем массив путей
 paths=()
 
-for i in {0..6}; do
+for i in {0..8}; do
     path="/org/cinnamon/settings-daemon/plugins/media-keys/custom-keybindings/custom_tiler$i/"
     paths+=("'$path'")
     
@@ -84,6 +92,6 @@ gsettings set org.cinnamon.settings-daemon.plugins.media-keys custom-keybindings
 
 echo "Горячие клавиши dynamic-tiler для Cinnamon успешно настроены!"
 echo "Назначены следующие комбинации:"
-echo "  • Super + Left / Right / Up / Down -> Эластичный тайлинг по сетке 12x12"
-echo "  • Ctrl + Super + Left / Right      -> Быстрый перенос в 1/2 экрана (без изменения размера)"
+echo "  • Super + Left / Right / Up / Down -> Эластичный тайлинг по сетке"
+echo "  • Ctrl + Super + Left / Right / Up / Down -> Быстрый перенос в 1/2 экрана"
 echo "  • Super + Backspace                -> Восстановление исходных координат окна (Restore)"

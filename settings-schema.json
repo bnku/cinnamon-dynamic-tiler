@@ -215,7 +215,7 @@
   },
   "dnd-modifier-key": {
     "type": "keybinding",
-    "default": "<Shift>d",
+    "default": "<Control>d",
     "description": "Hold these modifiers while dragging to snap windows"
   },
   "experimentalSwapSameShapeWindows": {

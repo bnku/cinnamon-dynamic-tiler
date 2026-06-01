@@ -1,6 +1,6 @@
 {
   "name": "dynamic-tiler",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Dynamic window tiling utility for Linux (X11)",
   "main": "dist/cli.js",
   "bin": {
